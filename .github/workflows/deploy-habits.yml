@@ -4,7 +4,7 @@ on:
   push:
     branches: [dev]
     paths:
-      - "lambdas/habits/**"
+      - "lambdas/habits/**/*.py"
 
 jobs:
   deploy:

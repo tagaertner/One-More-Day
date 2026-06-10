@@ -4,7 +4,7 @@ on:
   push:
     branches: [dev]
     paths:
-      - "lambdas/checkin/**"
+      - "lambdas/checkin/**/*.py"
 
 jobs:
   deploy:
