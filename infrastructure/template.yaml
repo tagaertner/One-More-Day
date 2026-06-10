@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: One More Day — Serverless backend infrastructure
+
+globals:
+  Function:
+    Timeout: 30
+    MemorySize: 128
+    Runtime: python3.11
+    Environment:
+      Variables:
+        DYNAMODB_TABLE: !Ref HabitsTable
+        AWS_REGION: us-east-1
+
+Resources:
+  # ─────────────────────────────────────────
+  # SHARED INFRASTRUCTURE — Tami owns this
+  # ─────────────────────────────────────────
+
+  # ─── DynamoDB Table ───
+  # Shared by all four Lambdas
+  # PK: userId, SK: HABIT#id or CHECKIN#habitId#date or USER#profile
+  HabitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: one-more-day-habits
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  # ─── API Gateway ───
+  # Routes all four services through one endpoint
+  # Base URL: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: one-more-day-api
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+
+  # ─── S3 Buckets ───
+  # ReportsBucket — Nilu's Lambda writes weekly report JSON here (MVP)
+  # LogsBucket — habit completion logs for Athena queries (Nilu stretch goal)
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: one-more-day-reports
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 30
+
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: one-more-day-habit-logs
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # ─── SNS Topic ───
+  # Melody's Lambda publishes here on every successful check-in (MVP)
+  CheckinTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: one-more-day-checkin-notifications
+
+  # ─── SES Email Identity ───
+  # Aksana stretch goal — daily reminders and weekly summary emails
+  # After deploy: go to SES console and verify this email address
+  # Change this to whatever email address you want to send from
+  SESEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: one-more-day-notifications@gmail.com
+
+  # ─── EventBridge Rule ───
+  # Aksana stretch goal — fires daily at 9am UTC to trigger habit reminders
+  # Set to DISABLED so it does not fire during MVP development
+  # Aksana enables it in the AWS console when she is ready to test
+  DailyReminderRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: one-more-day-daily-reminder
+      Description: Fires daily at 9am UTC to trigger habit reminders
+      ScheduleExpression: "cron(0 9 * * ? *)"
+      State: DISABLED
+      Targets:
+        - Arn: !GetAtt HabitsFunction.Arn
+          Id: HabitsFunctionTarget
+
+  # Permission for EventBridge to invoke Aksana's Habits Lambda
+  DailyReminderPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HabitsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyReminderRule.Arn
+
+  # ─────────────────────────────────────────
+  # LAMBDA FUNCTIONS
+  # ─────────────────────────────────────────
+
+  # ─── Aksana — Habit Management (MVP) ───
+  # POST /habits — create a habit
+  # GET /habits — list all active habits
+  # DELETE /habits/{id} — soft delete
+  # Stretch: EventBridge + SES daily reminders and weekly summary emails
+  HabitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-habits
+      CodeUri: ../lambdas/habits/
+      Handler: handler.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref HabitsTable
+        - CloudWatchLogsFullAccess
+        - SESCrudPolicy:
+            IdentityName: !Ref SESEmailIdentity
+      Events:
+        CreateHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits
+            Method: POST
+        ListHabits:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits
+            Method: GET
+        DeleteHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}
+            Method: DELETE
+
+  # ─── Melody — Daily Check-In (MVP) ───
+  # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
+  # GET /habits/{id}/history — completion history
+  # Unique AWS service: SNS
+  CheckinFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-checkin
+      CodeUri: ../lambdas/checkin/
+      Handler: handler.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+
+  # ─────────────────────────────────────────
+  # CLOUDWATCH LOG GROUPS — Tami owns this
+  # ─────────────────────────────────────────
+
+  # ─── Log Groups ───
+  # One log group per Lambda function
+  # Logs are retained for 30 days to keep costs low
+  # All four Lambda invocations are logged here automatically
+
+  HabitsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-habits
+      RetentionInDays: 30
+
+  CheckinLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-checkin
+      RetentionInDays: 30
+
+  AnalyticsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-analytics
+      RetentionInDays: 30
+
+  HealthLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-health
+      RetentionInDays: 30
