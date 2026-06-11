@@ -2,16 +2,6 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: One More Day — Serverless backend infrastructure
 
-globals:
-  Function:
-    Timeout: 30
-    MemorySize: 128
-    Runtime: python3.11
-    Environment:
-      Variables:
-        DYNAMODB_TABLE: !Ref HabitsTable
-        AWS_REGION: us-east-1
-
 Resources:
   # ─────────────────────────────────────────
   # SHARED INFRASTRUCTURE — Tami owns this
@@ -39,11 +29,23 @@ Resources:
   # ─── API Gateway ───
   # Routes all four services through one endpoint
   # Base URL: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+  # API key required for all endpoints — included in x-api-key header
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
       Name: one-more-day-api
       StageName: prod
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          UsagePlanName: one-more-day-usage-plan
+          Quota:
+            Limit: 10000
+            Period: MONTH
+          Throttle:
+            BurstLimit: 100
+            RateLimit: 50
       Cors:
         AllowMethods: "'GET,POST,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
@@ -112,10 +114,6 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DailyReminderRule.Arn
 
-  # ─────────────────────────────────────────
-  # LAMBDA FUNCTIONS
-  # ─────────────────────────────────────────
-
   # ─── Aksana — Habit Management (MVP) ───
   # POST /habits — create a habit
   # GET /habits — list all active habits
@@ -127,9 +125,15 @@ Resources:
       FunctionName: one-more-day-habits
       CodeUri: ../lambdas/habits/
       Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref HabitsTable
+            TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
         - SESCrudPolicy:
             IdentityName: !Ref SESEmailIdentity
@@ -163,9 +167,107 @@ Resources:
       FunctionName: one-more-day-checkin
       CodeUri: ../lambdas/checkin/
       Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+          SNS_TOPIC_ARN: !Ref CheckinTopic
       Policies:
         - DynamoDBCrudPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt CheckinTopic.TopicName
+      Events:
+        CompleteHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/complete
+            Method: POST
+        GetHistory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/history
+            Method: GET
 
+  # ─── Nilu — Analytics + Dashboard (MVP) ───
+  # GET /stats — weekly summary
+  # GET /habits/{id}/streak — current and longest streak
+  # GET /report/export — generate S3 report, return presigned URL
+  # Unique AWS service: S3
+  # Stretch: Athena pattern queries, Bedrock summaries
+  AnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-analytics
+      CodeUri: ../lambdas/analytics/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+          S3_BUCKET_REPORTS: !Ref ReportsBucket
+          S3_BUCKET_LOGS: !Ref LogsBucket
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+        - S3CrudPolicy:
+            BucketName: !Ref LogsBucket
+      Events:
+        GetStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /stats
+            Method: GET
+        GetStreak:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/streak
+            Method: GET
+        ExportReport:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /report/export
+            Method: GET
+
+  # ─── Tami — Health Check (MVP) ───
+  # GET /health — confirms all services are connected
+  # Unique AWS service: API Gateway + AWS SAM
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-health
+      CodeUri: ../lambdas/health/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+      Events:
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /health
+            Method: GET
   # ─────────────────────────────────────────
   # CLOUDWATCH LOG GROUPS — Tami owns this
   # ─────────────────────────────────────────
@@ -198,3 +300,17 @@ Resources:
     Properties:
       LogGroupName: /aws/lambda/one-more-day-health
       RetentionInDays: 30
+
+# ─────────────────────────────────────────
+# OUTPUTS — API Gateway URL and ID
+# Available after deploy via:
+# aws cloudformation describe-stacks --stack-name one-more-day --query "Stacks[0].Outputs"
+# ─────────────────────────────────────────
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.us-east-1.amazonaws.com/prod"
+
+  ApiGatewayId:
+    Description: API Gateway ID
+    Value: !Ref ApiGateway
