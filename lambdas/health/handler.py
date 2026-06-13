@@ -66,3 +66,4 @@ def lambda_handler(event, context):
         },
         "body": json.dumps(response_body)
     }
+# smoke test trigger
