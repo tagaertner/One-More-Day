@@ -114,6 +114,24 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt DailyReminderRule.Arn
 
+  # ─── Athena Workgroup ───
+  # Nilu stretch goal — runs pattern queries against S3 habit logs
+  # No Glue required — schema defined directly in Athena via DDL
+  # Cost: $5 per TB scanned — essentially free at capstone scale
+  AthenaWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: one-more-day-workgroup
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${LogsBucket}/athena-results/"
+        EnforceWorkGroupConfiguration: false
+
+  # ─────────────────────────────────────────
+  # LAMBDA FUNCTIONS
+  # ─────────────────────────────────────────
+
   # ─── Aksana — Habit Management (MVP) ───
   # POST /habits — create a habit
   # GET /habits — list all active habits
@@ -159,7 +177,7 @@ Resources:
 
   # ─── Melody — Daily Check-In (MVP) ───
   # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
-  # GET /habits/{id}/history — completion history
+  # GET /habits/{id}/history — completion history (if time allows)
   # Unique AWS service: SNS
   CheckinFunction:
     Type: AWS::Serverless::Function
@@ -196,7 +214,6 @@ Resources:
 
   # ─── Nilu — Analytics + Dashboard (MVP) ───
   # GET /stats — weekly summary
-  # GET /habits/{id}/streak — current and longest streak
   # GET /report/export — generate S3 report, return presigned URL
   # Unique AWS service: S3
   # Stretch: Athena pattern queries, Bedrock summaries
@@ -214,6 +231,8 @@ Resources:
           DYNAMODB_TABLE: !Ref HabitsTable
           S3_BUCKET_REPORTS: !Ref ReportsBucket
           S3_BUCKET_LOGS: !Ref LogsBucket
+          ATHENA_WORKGROUP: one-more-day-workgroup
+          ATHENA_OUTPUT: !Sub "s3://${LogsBucket}/athena-results/"
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Sub "${HabitsTable}"
@@ -222,6 +241,24 @@ Resources:
             BucketName: !Ref ReportsBucket
         - S3CrudPolicy:
             BucketName: !Ref LogsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - athena:StartQueryExecution
+                - athena:GetQueryExecution
+                - athena:GetQueryResults
+                - athena:StopQueryExecution
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - glue:GetDatabase
+                - glue:GetTable
+                - glue:GetPartitions
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
       Events:
         GetStats:
           Type: Api
@@ -268,6 +305,7 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
+
   # ─────────────────────────────────────────
   # CLOUDWATCH LOG GROUPS — Tami owns this
   # ─────────────────────────────────────────

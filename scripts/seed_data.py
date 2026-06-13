@@ -1,96 +1,200 @@
 import boto3
-import os
-from datetime import datetime
+from datetime import datetime, timedelta
+import random
 
+# Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 table = dynamodb.Table('one-more-day-habits')
 
-# ─── Test users ───
-users = ['aksana-dev', 'melody-dev', 'nilu-dev', 'tami-dev']
+# 60-day history window
+start_date = datetime(2026, 4, 13)
+end_date = datetime(2026, 6, 12)
 
-for user in users:
+# ─── User profiles ───
+users = {
+    'aksana-dev': {'email': 'aksana@example.com', 'name': 'Aksana', 'time': '08:00', 'tz': 'EST'},
+    'melody-dev': {'email': 'melody@example.com', 'name': 'Melody', 'time': '20:00', 'tz': 'PST'},
+    'nilu-dev':   {'email': 'nilu@example.com',   'name': 'Nilu',   'time': '07:30', 'tz': 'GMT'},
+    'tami-dev':   {'email': 'tami@example.com',   'name': 'Tami',   'time': '18:00', 'tz': 'EST'},
+}
 
-    # ─── USER profile item ───
+sample_notes = [
+    "Feeling great today!",
+    "Completed right before lunch.",
+    "Hard to get through it, but pushed through.",
+    "Done early in the morning.",
+    "Routine is feeling solid.",
+    "Proud of myself today.",
+    "Needed this.",
+    "Tough day but did it.",
+]
+
+# ─────────────────────────────────────────
+# HABIT CONFIGS PER USER
+# Each user has 6 habits — different categories, different patterns
+# Pattern key: function(date) -> bool (True = completed that day)
+# ─────────────────────────────────────────
+
+def every_day(d): return True
+def weekdays_only(d): return d.weekday() < 5
+def high_compliance_breaks_sundays(d): return not (d.weekday() == 6 and d.day % 2 == 0)
+def eleven_on_three_off(d, start): return (d - start).days % 14 < 11 and d.weekday() < 5
+def struggling(d): return d.weekday() in [1, 3] and d.day % 3 != 0
+def weekends_only(d): return d.weekday() >= 5
+def declining(d, start): days = (d - start).days; return days < 30 and d.weekday() < 5
+def strong_then_break(d, start): days = (d - start).days; return days < 20 or (days > 35 and d.weekday() < 5)
+
+user_habits = {
+    'aksana-dev': [
+        # Health dominant — crushing water and sleep, struggling with fitness
+        {'id': 'aksana001', 'name': 'Drink 8 glasses of water', 'category': 'Health',
+         'fn': lambda d: high_compliance_breaks_sundays(d)},
+        {'id': 'aksana002', 'name': 'Sleep 8 hours', 'category': 'Health',
+         'fn': lambda d: d.weekday() < 6},
+        {'id': 'aksana003', 'name': 'Run 3 miles', 'category': 'Fitness',
+         'fn': lambda d: struggling(d)},
+        {'id': 'aksana004', 'name': 'Take vitamins', 'category': 'Health',
+         'fn': lambda d: every_day(d)},
+        {'id': 'aksana005', 'name': 'Stretch 10 minutes', 'category': 'Fitness',
+         'fn': lambda d: d.weekday() in [0, 2, 4]},
+        {'id': 'aksana006', 'name': 'No alcohol', 'category': 'Health',
+         'fn': lambda d: every_day(d)},
+    ],
+    'melody-dev': [
+        # Learning + Mind dominant — strong LeetCode, inconsistent meditation
+        {'id': 'melody001', 'name': 'LeetCode', 'category': 'Learning',
+         'fn': lambda d: weekdays_only(d)},
+        {'id': 'melody002', 'name': 'Read 20 minutes', 'category': 'Mind',
+         'fn': lambda d: d.weekday() < 6},
+        {'id': 'melody003', 'name': 'Meditate', 'category': 'Mind',
+         'fn': lambda d, s=start_date: eleven_on_three_off(d, s)},
+        {'id': 'melody004', 'name': 'Study flashcards', 'category': 'Learning',
+         'fn': lambda d: weekdays_only(d) and d.day % 2 == 0},
+        {'id': 'melody005', 'name': 'Journal', 'category': 'Mind',
+         'fn': lambda d: struggling(d)},
+        {'id': 'melody006', 'name': 'Watch a tutorial', 'category': 'Learning',
+         'fn': lambda d: d.weekday() in [1, 3, 5]},
+    ],
+    'nilu-dev': [
+        # Productivity dominant — perfect on planning, weak on finance
+        {'id': 'nilu001', 'name': 'Plan tomorrow', 'category': 'Productivity',
+         'fn': lambda d: every_day(d)},
+        {'id': 'nilu002', 'name': 'Deep work block', 'category': 'Productivity',
+         'fn': lambda d: weekdays_only(d)},
+        {'id': 'nilu003', 'name': 'Log expenses', 'category': 'Finance',
+         'fn': lambda d: struggling(d)},
+        {'id': 'nilu004', 'name': 'Clear inbox', 'category': 'Productivity',
+         'fn': lambda d: d.weekday() < 6},
+        {'id': 'nilu005', 'name': 'Check budget', 'category': 'Finance',
+         'fn': lambda d: d.weekday() == 0},
+        {'id': 'nilu006', 'name': 'Work on capstone', 'category': 'Productivity',
+         'fn': lambda d: every_day(d)},
+    ],
+    'tami-dev': [
+        # Mixed — strong Learning, inconsistent Mind and Finance
+        {'id': 'tami001', 'name': 'LeetCode', 'category': 'Learning',
+         'fn': lambda d, s=start_date: strong_then_break(d, s)},
+        {'id': 'tami002', 'name': 'Walk 10k steps', 'category': 'Fitness',
+         'fn': lambda d: d.weekday() < 6},
+        {'id': 'tami003', 'name': 'No social media before noon', 'category': 'Mind',
+         'fn': lambda d: weekdays_only(d) and d.day % 3 != 0},
+        {'id': 'tami004', 'name': 'Review class notes', 'category': 'Learning',
+         'fn': lambda d: weekdays_only(d)},
+        {'id': 'tami005', 'name': 'No unnecessary spending', 'category': 'Finance',
+         'fn': lambda d: struggling(d)},
+        {'id': 'tami006', 'name': 'Work on capstone', 'category': 'Productivity',
+         'fn': lambda d: every_day(d)},
+    ],
+}
+
+# ─────────────────────────────────────────
+# WRITE ALL DATA
+# ─────────────────────────────────────────
+
+total_checkins = 0
+total_habits = 0
+
+for user, prefs in users.items():
+    print(f"\nSeeding {user}...")
+
+    # USER profile
     table.put_item(Item={
         'userId': user,
         'SK': 'USER#profile',
-        'email': f'{user.split("-")[0]}@example.com',
-        'name': user.split('-')[0].capitalize(),
-        'createdAt': '2026-06-01T10:00:00Z'
+        'email': prefs['email'],
+        'name': prefs['name'],
+        'preferredReminderTime': prefs['time'],
+        'timezone': prefs['tz'],
+        'createdAt': '2026-04-13T10:00:00Z'
     })
 
-    # ─── HABIT items ───
-    table.put_item(Item={
-        'userId': user,
-        'SK': 'HABIT#seed001',
-        'habitId': 'seed001',
-        'habitName': 'Drink water',
-        'category': 'Health',
-        'active': True,
-        'streakCount': 5,
-        'longestStreak': 7,
-        'lastCompletedDate': '2026-06-09',
-        'createdAt': '2026-06-01T10:00:00Z',
-        'deletedAt': None
-    })
+    habits = user_habits[user]
 
-    table.put_item(Item={
-        'userId': user,
-        'SK': 'HABIT#seed002',
-        'habitId': 'seed002',
-        'habitName': 'LeetCode',
-        'category': 'Learning',
-        'active': True,
-        'streakCount': 1,
-        'longestStreak': 5,
-        'lastCompletedDate': '2026-06-08',
-        'createdAt': '2026-06-01T10:00:00Z',
-        'deletedAt': None
-    })
+    for habit in habits:
+        habit_id = habit['id']
+        checkin_dates = set()
 
-    table.put_item(Item={
-        'userId': user,
-        'SK': 'HABIT#seed003',
-        'habitId': 'seed003',
-        'habitName': 'Meditate',
-        'category': 'Mind',
-        'active': True,
-        'streakCount': 14,
-        'longestStreak': 14,
-        'lastCompletedDate': '2026-06-09',
-        'createdAt': '2026-06-01T10:00:00Z',
-        'deletedAt': None
-    })
+        # Generate checkin dates using the habit's pattern function
+        current = start_date
+        while current <= end_date:
+            if habit['fn'](current):
+                checkin_dates.add(current.strftime('%Y-%m-%d'))
+            current += timedelta(days=1)
 
-    # ─── CHECKIN items ───
-    checkins = [
-        ('seed001', '2026-06-05', 'Drank 8 cups today'),
-        ('seed001', '2026-06-06', None),
-        ('seed001', '2026-06-07', None),
-        ('seed001', '2026-06-08', None),
-        ('seed001', '2026-06-09', 'Staying hydrated'),
-        ('seed002', '2026-06-08', 'Completed two problems'),
-        ('seed002', '2026-06-09', None),
-        ('seed003', '2026-06-01', None),
-        ('seed003', '2026-06-02', None),
-        ('seed003', '2026-06-03', None),
-        ('seed003', '2026-06-04', None),
-        ('seed003', '2026-06-05', None),
-        ('seed003', '2026-06-06', None),
-        ('seed003', '2026-06-07', None),
-        ('seed003', '2026-06-08', None),
-        ('seed003', '2026-06-09', 'Feeling calm'),
-    ]
+        dates_sorted = sorted(list(checkin_dates))
 
-    for habitId, date, notes in checkins:
+        # Write CHECKIN items
+        for i, date_str in enumerate(dates_sorted):
+            has_note = (i % 3 == 0)
+            table.put_item(Item={
+                'userId': user,
+                'SK': f'CHECKIN#{habit_id}#{date_str}',
+                'habitId': habit_id,
+                'date': date_str,
+                'completed': True,
+                'notes': sample_notes[i % len(sample_notes)] if has_note else None,
+                'timestamp': f'{date_str}T20:00:00Z'
+            })
+            total_checkins += 1
+
+        # Calculate streaks mathematically
+        longest_streak = 0
+        temp_streak = 0
+        current = start_date
+        while current <= end_date:
+            if current.strftime('%Y-%m-%d') in checkin_dates:
+                temp_streak += 1
+                longest_streak = max(longest_streak, temp_streak)
+            else:
+                temp_streak = 0
+            current += timedelta(days=1)
+
+        # Current streak — check if active as of today or yesterday
+        yesterday = (end_date - timedelta(days=1)).strftime('%Y-%m-%d')
+        today = end_date.strftime('%Y-%m-%d')
+        current_streak = temp_streak if (today in checkin_dates or yesterday in checkin_dates) else 0
+        last_completed = dates_sorted[-1] if dates_sorted else None
+
+        # Write HABIT item
         table.put_item(Item={
             'userId': user,
-            'SK': f'CHECKIN#{habitId}#{date}',
-            'habitId': habitId,
-            'date': date,
-            'completed': True,
-            'notes': notes,
-            'timestamp': f'{date}T20:00:00Z'
+            'SK': f'HABIT#{habit_id}',
+            'habitId': habit_id,
+            'habitName': habit['name'],
+            'category': habit['category'],
+            'active': True,
+            'streakCount': current_streak,
+            'longestStreak': longest_streak,
+            'lastCompletedDate': last_completed,
+            'createdAt': '2026-04-13T10:00:00Z',
+            'deletedAt': None
         })
 
-print("Seed data loaded successfully")
+        print(f"  HABIT: {habit['name']} — {len(dates_sorted)} checkins, streak: {current_streak}, longest: {longest_streak}")
+        total_habits += 1
+
+print(f"\n✅ Seed data loaded successfully")
+print(f"   4 users")
+print(f"   {total_habits} habits (6 per user)")
+print(f"   {total_checkins} check-in records")
+print(f"   60 days of history (2026-04-13 to 2026-06-12)")
