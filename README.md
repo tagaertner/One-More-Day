@@ -36,24 +36,40 @@ A serverless habit tracker built with Python, AWS Lambda, DynamoDB, and Streamli
 ```
 one-more-day/
 ├── lambdas/
-│   ├── habits/          ← Aksana
-│   ├── checkin/         ← Melody
-│   ├── analytics/       ← Nilu
-│   └── health/          ← Tami
+│   ├── habits/              ← Aksana
+│   │   ├── handler.py
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── tests/
+│   ├── checkin/             ← Melody
+│   │   ├── handler.py
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── tests/
+│   ├── analytics/           ← Nilu
+│   │   ├── handler.py
+│   │   ├── Dockerfile
+│   │   ├── requirements.txt
+│   │   └── tests/
+│   └── health/              ← Tami
+│       ├── handler.py
+│       ├── Dockerfile
+│       ├── requirements.txt
+│       └── tests/
 ├── streamlit/
-│   ├── app.py           ← main entry point
-│   ├── habits_page.py   ← Aksana
-│   ├── checkin_page.py  ← Melody
-│   ├── analytics_page.py ← Nilu
-│   └── health_page.py   ← Tami
+│   ├── app.py               ← main entry point
+│   ├── habits_page.py       ← Aksana
+│   ├── checkin_page.py      ← Melody
+│   ├── analytics_page.py    ← Nilu
+│   └── health_page.py       ← Tami
 ├── infrastructure/
-│   └── template.yaml    ← AWS SAM — all infrastructure defined here
+│   └── template.yaml        ← AWS SAM — all infrastructure defined here
 ├── scripts/
-│   ├── seed_data.py     ← seeds DynamoDB with test data
-│   └── smoke_test.py    ← confirms all endpoints are live after deploy
-├── docker-compose.yml   ← runs all four Lambdas locally
-├── .env.example         ← copy this to .env and fill in your values
-└── .github/workflows/   ← CI/CD pipeline — do not touch
+│   ├── seed_data.py         ← seeds DynamoDB with test data
+│   └── smoke_test.py        ← confirms all endpoints are live after deploy
+├── docker-compose.yml       ← runs all four Lambdas locally
+├── .env.example             ← copy this to .env and fill in your values
+└── .github/workflows/       ← CI/CD pipeline — do not touch
 ```
 
 ---
@@ -77,18 +93,38 @@ cp .env.example .env
 Open `.env` and fill in your values. Get your credentials from Tami securely.
 
 ```bash
+# AWS credentials — get these from Tami
 AWS_REGION=us-east-1
 AWS_ACCESS_KEY_ID=your_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_here
+
+# DynamoDB
 DYNAMODB_TABLE=one-more-day-habits
+DYNAMODB_ENDPOINT=http://localhost:8000
+
+# S3
 S3_BUCKET_REPORTS=one-more-day-reports
 S3_BUCKET_LOGS=one-more-day-habit-logs
-SNS_TOPIC_ARN=your_topic_arn_here
+
+# SNS
+SNS_TOPIC_ARN=arn:aws:sns:us-east-1:061361823578:one-more-day-checkin-notifications
+
+# API
 API_BASE_URL=https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod
 API_KEY=your_api_key_here
+
+# Streamlit
 STREAMLIT_URL=https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app
+
+# Your local test prefix — change this to your own
 LOCAL_USER_ID=your-dev-prefix-here
-DYNAMODB_ENDPOINT=http://localhost:8000
+
+# Stretch goal variables — only needed when working on stretch features
+ATHENA_WORKGROUP=one-more-day-workgroup
+ATHENA_OUTPUT=s3://one-more-day-habit-logs/athena-results/
+SES_FROM_EMAIL=one-more-day-notifications@gmail.com
+EVENTBRIDGE_RULE=one-more-day-daily-reminder
+BEDROCK_MODEL_ID=your_bedrock_model_id_here
 ```
 
 > **Never commit your .env file. It is already in .gitignore.**
@@ -131,7 +167,7 @@ You should see your username in the Arn — `aksana-dev`, `melody-dev`, or `nilu
 aws dynamodb describe-table --table-name one-more-day-habits
 ```
 
-You should see the table details. If you get an error check your credentials and region.
+You should see the table details. If you get an error check your credentials and confirm your region is us-east-1.
 
 ### Step 6 — Create your feature branch
 
@@ -145,39 +181,34 @@ git checkout -b feature/nilu-analytics    # Nilu
 
 ## Running Locally with Docker
 
-Docker gives everyone the same environment and catches bugs that simple Python testing misses.
+Docker is already configured — Dockerfiles and docker-compose.yml are set up for you. You just need Docker Desktop installed and running on your machine.
 
-### Install Docker
-
-Download Docker Desktop from docker.com/products/docker-desktop. Make sure it is running — you should see the whale icon in your menu bar.
+**Install Docker Desktop:** docker.com/products/docker-desktop  
+Make sure the whale icon is visible in your menu bar before continuing.
 
 ### Start DynamoDB Local + your Lambda
 
 ```bash
-# Start just DynamoDB local
+# Terminal 1 — start local DynamoDB
 docker compose up dynamodb-local
 
-# Start your Lambda (in a separate terminal)
-docker compose up habits      # Aksana
-docker compose up checkin     # Melody
-docker compose up analytics   # Nilu
-docker compose up health      # Tami
-
-# Or start everything at once
-docker compose up
+# Terminal 2 — start your Lambda
+docker compose up habits      # Aksana  — runs on port 8001
+docker compose up checkin     # Melody  — runs on port 8002
+docker compose up analytics   # Nilu    — runs on port 8003
+docker compose up health      # Tami    — runs on port 8004
 ```
 
 ### Test your Lambda locally
 
 ```bash
-# Test health check
-curl http://localhost:8004/2015-03-31/functions/function/invocations \
-  -d '{}'
-
-# Test habits
+# Replace the port with your Lambda's port
+# habits=8001, checkin=8002, analytics=8003, health=8004
 curl http://localhost:8001/2015-03-31/functions/function/invocations \
-  -d '{"body": "{\"habitName\": \"Drink water\", \"category\": \"Health\", \"userId\": \"aksana-dev\"}"}'
+  -d '{}'
 ```
+
+You should see a 200 response. If you do your Lambda is running correctly in Docker.
 
 ### Stop everything
 
@@ -239,10 +270,32 @@ docker compose down
 }
 ```
 
+### USER profile fields
+
+```json
+{
+  "userId": "aksana-dev",
+  "SK": "USER#profile",
+  "email": "aksana@example.com",
+  "name": "Aksana",
+  "preferredReminderTime": "08:00",
+  "timezone": "EST",
+  "createdAt": "2026-04-13T10:00:00Z"
+}
+```
+
 ### Date format rules
 
 - `createdAt`, `timestamp` — UTC ISO format: `2026-06-12T20:00:00Z`
 - `date`, `lastCompletedDate` — YYYY-MM-DD: `2026-06-12`
+
+### Category values — fixed dropdown
+
+```
+Health | Fitness | Mind | Learning | Productivity | Finance
+```
+
+Always use exactly one of these six values. Never use a custom category — it will break Nilu's stats aggregation.
 
 ---
 
@@ -256,20 +309,20 @@ curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \
   -H "x-api-key: YOUR_API_KEY"
 ```
 
-| Method | Endpoint              | Owner  | Description             |
-| ------ | --------------------- | ------ | ----------------------- |
-| POST   | /habits               | Aksana | Create a habit          |
-| GET    | /habits               | Aksana | List all active habits  |
-| DELETE | /habits/{id}          | Aksana | Soft delete a habit     |
-| POST   | /habits/{id}/complete | Melody | Mark habit complete     |
-| GET    | /habits/{id}/history  | Melody | View completion history |
-| GET    | /stats                | Nilu   | Weekly progress summary |
-| GET    | /report/export        | Nilu   | Export report to S3     |
-| GET    | /health               | Tami   | System health check     |
+| Method | Endpoint              | Owner  | Description                              |
+| ------ | --------------------- | ------ | ---------------------------------------- |
+| POST   | /habits               | Aksana | Create a habit                           |
+| GET    | /habits               | Aksana | List all active habits                   |
+| DELETE | /habits/{id}          | Aksana | Soft delete a habit                      |
+| POST   | /habits/{id}/complete | Melody | Mark habit complete                      |
+| GET    | /habits/{id}/history  | Melody | View completion history (if time allows) |
+| GET    | /stats                | Nilu   | Weekly progress summary                  |
+| GET    | /report/export        | Nilu   | Export report to S3                      |
+| GET    | /health               | Tami   | System health check                      |
 
 ### Standard error response
 
-Every Lambda returns this shape on failure:
+Every Lambda returns this shape on failure — use the same shape in your code:
 
 ```json
 {
@@ -283,28 +336,31 @@ Every Lambda returns this shape on failure:
 
 ## Running Tests
 
-Each Lambda has a `tests/` folder with at least two tests. Run them locally:
+Each Lambda has a `tests/` folder with at least two tests. Run them locally before pushing:
 
 ```bash
-# Install dependencies
+# Install dependencies for your Lambda
 pip install -r lambdas/habits/requirements.txt
 
-# Run tests for your Lambda
-pytest lambdas/habits/tests/
-pytest lambdas/checkin/tests/
-pytest lambdas/analytics/tests/
-pytest lambdas/health/tests/
+# Run your tests
+pytest lambdas/habits/tests/     # Aksana
+pytest lambdas/checkin/tests/    # Melody
+pytest lambdas/analytics/tests/  # Nilu
+pytest lambdas/health/tests/     # Tami
 ```
 
-Use `moto` to mock AWS services in your tests — your Lambda code does not change, moto intercepts boto3 calls and fakes the responses:
+### Using moto to mock AWS services
+
+Use `moto` in your tests so you never hit the real DynamoDB table during testing:
 
 ```python
 from moto import mock_dynamodb
 import boto3
+import json
 
 @mock_dynamodb
 def test_create_habit():
-    # moto creates a fake DynamoDB table
+    # moto creates a fake DynamoDB table in memory
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     table = dynamodb.create_table(
         TableName='one-more-day-habits',
@@ -318,54 +374,57 @@ def test_create_habit():
         ],
         BillingMode='PAY_PER_REQUEST'
     )
-    # test your Lambda handler here
-    assert True
+    # call your Lambda handler with a test event
+    from handler import lambda_handler
+    event = {'body': json.dumps({'habitName': 'Drink water', 'category': 'Health', 'userId': 'aksana-dev'})}
+    response = lambda_handler(event, None)
+    assert response['statusCode'] == 200
 ```
 
 ---
 
 ## CI/CD Pipeline
 
-When you push code and merge to dev, GitHub Actions automatically:
+When you push code and open a pull request to dev, GitHub Actions automatically:
 
-1. Installs your dependencies
-2. Runs your tests — deploy is blocked if tests fail
-3. Deploys your Lambda to AWS
+1. Installs your dependencies from `requirements.txt`
+2. Runs your tests with pytest — deploy is blocked if any test fails
+3. Deploys your Lambda to AWS if tests pass
 
-You do not trigger this manually. It just fires.
+You do not trigger this manually. It just fires when you merge to dev.
 
 **Watch your pipeline:** github.com/tagaertner/One-More-Day → Actions tab
 
-After every successful deploy, a smoke test runs automatically to confirm all core endpoints are live.
+After every successful deploy a smoke test runs automatically to confirm all core endpoints are live.
 
 ---
 
 ## Git Workflow
 
 ```bash
-# Every day before you start
+# Every day before you start — sync with dev
 git checkout dev
 git pull origin dev
 git checkout feature/your-branch
 git merge dev
 
-# Commit often
+# Commit often with clear messages
 git add .
 git commit -m "add streak increment logic"
 
-# When your feature is ready
+# When your feature is ready — open a pull request
 git push origin feature/your-branch
-# Open a pull request to dev on GitHub
-# Tag a teammate to review
-# Merge after approval
+# Go to GitHub → open pull request → base: dev → tag a teammate to review
+# Wait for approval → merge
 ```
 
-**Rules:**
+**Rules — no exceptions:**
 
 - Never push directly to dev or main
 - Never merge your own pull request
 - Never commit your .env file
 - Only edit files in your own folder
+- If you are blocked post in the group chat the same day
 
 ---
 
@@ -380,21 +439,22 @@ git push origin feature/your-branch
 | API Gateway           | one-more-day-api                   |
 | CloudWatch log groups | /aws/lambda/one-more-day-\*        |
 | CloudFormation stack  | one-more-day                       |
+| Athena workgroup      | one-more-day-workgroup             |
 
 ---
 
 ## Checking CloudWatch Logs
 
-When something breaks on AWS the answer is in CloudWatch:
+When something breaks on AWS the answer is almost always in CloudWatch:
 
 ```bash
-# Follow logs live
+# Follow logs live — Ctrl+C to stop
 aws logs tail /aws/lambda/one-more-day-habits --follow
 aws logs tail /aws/lambda/one-more-day-checkin --follow
 aws logs tail /aws/lambda/one-more-day-analytics --follow
 aws logs tail /aws/lambda/one-more-day-health --follow
 
-# Filter for errors
+# Filter for errors only
 aws logs filter-log-events \
   --log-group-name /aws/lambda/one-more-day-habits \
   --filter-pattern ERROR
@@ -404,11 +464,18 @@ aws logs filter-log-events \
 
 ## If Something Is Broken
 
-1. Check CloudWatch logs first
-2. Run the health check: `curl .../prod/health -H "x-api-key: ..."`
+1. Check CloudWatch logs first — that is where the real error is
+2. Run the health check to confirm infrastructure is up:
+
+```bash
+curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \
+  -H "x-api-key: YOUR_API_KEY"
+```
+
 3. Confirm your AWS credentials are correct: `aws sts get-caller-identity`
 4. Confirm you are in us-east-1: `aws configure get region`
-5. Post in the group chat the same day — do not sit on a blocker
+5. Confirm your .env values match what is in .env.example
+6. Post in the group chat the same day — do not sit on a blocker for 24 hours
 
 ---
 

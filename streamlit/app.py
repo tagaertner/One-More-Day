@@ -1,8 +1,12 @@
 import streamlit as st
+import habits_page
+import checkin_page
+import analytics_page
+import health_page
 
 st.set_page_config(
     page_title="One More Day",
-    page_icon="✅",
+    page_icon="🌄",
     layout="wide"
 )
 
@@ -12,17 +16,10 @@ page = st.sidebar.selectbox(
 )
 
 if page == "Health Check":
-    st.title("System Health Check")
-    st.write("Tami's health check page coming soon.")
-
+    health_page.show()
 elif page == "Habits":
-    st.title("Habit Management")
-    st.write("Aksana's habits page coming soon.")
-
+    habits_page.show()
 elif page == "Check-in":
-    st.title("Daily Check-In")
-    st.write("Melody's check-in page coming soon.")
-
+    checkin_page.show()
 elif page == "Dashboard":
-    st.title("Progress Dashboard")
-    st.write("Nilu's dashboard page coming soon.")
+    analytics_page.show()
