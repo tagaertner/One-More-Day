@@ -10,3 +10,4 @@ def lambda_handler(event, context):
     }
 # CI/CD confirmed
 # fix
+habits name fix

@@ -28,7 +28,7 @@ jobs:
           cd lambdas/habits
           zip -r function.zip .
           aws lambda update-function-code \
-            --function-name name one-more-day-habits \
+            --function-name one-more-day-habits \
             --zip-file fileb://function.zip
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
