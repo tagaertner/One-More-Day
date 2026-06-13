@@ -4,7 +4,7 @@ def lambda_handler(event, context):
     return {
         "statusCode": 200,
         "body": json.dumps({
-            "message": "Habits Lambda is live",
+            "message": "Habits Lambda is live, CI/CD confirmed",
             "owner": "Aksana"
         })
     }
