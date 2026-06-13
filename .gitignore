@@ -233,3 +233,4 @@ samconfig.toml
 # macOS
 .DS_Store
 .aws-sam/
+response.json
