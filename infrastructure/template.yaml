@@ -51,6 +51,39 @@ Resources:
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
         AllowOrigin: "'*'"
 
+  ApiGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-api-4xx-errors
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: one-more-day-api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-api-5xx-errors
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: one-more-day-api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      # Zero tolerance — even one 5xx is urgent
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   # ─── S3 Buckets ───
   # ReportsBucket — Nilu's Lambda writes weekly report JSON here (MVP)
   # LogsBucket — habit completion logs for Athena queries (Nilu stretch goal)
@@ -175,6 +208,25 @@ Resources:
             Path: /habits/{id}
             Method: DELETE
 
+    # Lambda error alarms
+  HabitsLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-habits-errors
+      AlarmDescription: Habits Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      # Alarm if 3 or more errors in 5 minutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   # ─── Melody — Daily Check-In (MVP) ───
   # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
   # GET /habits/{id}/history — completion history (if time allows)
@@ -211,6 +263,25 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /habits/{id}/history
             Method: GET
+
+  # Lambda Error Alarm
+  CheckinLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-errors
+      AlarmDescription: CheckinLambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      # Alarm if 3 or more errors in 5 minutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
   # ─── Nilu — Analytics + Dashboard (MVP) ───
   # GET /stats — weekly summary
@@ -279,6 +350,25 @@ Resources:
             Path: /report/export
             Method: GET
 
+  # Lambda error alarm
+  AnalyticsLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-errors
+      AlarmDescription: Analytics Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      # Alarm if 3 or more errors in 5 minutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   # ─── Tami — Health Check (MVP) ───
   # GET /health — confirms all services are connected
   # Unique AWS service: API Gateway + AWS SAM
@@ -305,6 +395,24 @@ Resources:
             RestApiId: !Ref ApiGateway
             Path: /health
             Method: GET
+
+    HealthLambdaErrorAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: one-more-day-health-errors
+        AlarmDescription: Health Lambda erroring — infrastructure may be degraded
+        MetricName: Errors
+        Namespace: AWS/Lambda
+        Dimensions:
+          - Name: FunctionName
+            Value: !Ref HealthFunction
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 3
+        # Alarm if 3 or more errors in 5 minutes
+        ComparisonOperator: GreaterThanOrEqualToThreshold
+        TreatMissingData: notBreaching
 
   # ─────────────────────────────────────────
   # CLOUDWATCH LOG GROUPS — Tami owns this
