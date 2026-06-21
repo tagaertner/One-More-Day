@@ -177,6 +177,7 @@ Resources:
       CodeUri: ../lambdas/habits/
       Handler: handler.lambda_handler
       Runtime: python3.11
+      Tracing: Active
       Timeout: 30
       MemorySize: 128
       Environment:
@@ -186,6 +187,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
         - SESCrudPolicy:
             IdentityName: !Ref SESEmailIdentity
       Events:
@@ -260,6 +262,7 @@ Resources:
       CodeUri: ../lambdas/checkin/
       Handler: handler.lambda_handler
       Runtime: python3.11
+      Tracing: Active
       Timeout: 30
       MemorySize: 128
       Environment:
@@ -270,6 +273,7 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt CheckinTopic.TopicName
       Events:
@@ -339,6 +343,7 @@ Resources:
       CodeUri: ../lambdas/analytics/
       Handler: handler.lambda_handler
       Runtime: python3.11
+      Tracing: Active
       Timeout: 30
       MemorySize: 128
       Environment:
@@ -352,6 +357,7 @@ Resources:
         - DynamoDBReadPolicy:
             TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
         - S3CrudPolicy:
             BucketName: !Ref ReportsBucket
         - S3CrudPolicy:
@@ -445,6 +451,7 @@ Resources:
       CodeUri: ../lambdas/health/
       Handler: handler.lambda_handler
       Runtime: python3.11
+      Tracing: Active
       Timeout: 30
       MemorySize: 128
       Environment:
@@ -454,6 +461,7 @@ Resources:
         - DynamoDBReadPolicy:
             TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
       Events:
         HealthCheck:
           Type: Api
