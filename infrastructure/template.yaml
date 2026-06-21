@@ -227,6 +227,26 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
+  # CloudWatch Duration Alarms
+  HabitsLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-habits-duration
+      AlarmDescription: Habits Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Maximum
+      # Watch the maximum duration not the average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   # ─── Melody — Daily Check-In (MVP) ───
   # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
   # GET /habits/{id}/history — completion history (if time allows)
@@ -280,6 +300,26 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 3
       # Alarm if 3 or more errors in 5 minutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # CloudWatch Duration Alarms
+  CheckinLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-duration
+      AlarmDescription: Checkin Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Maximum
+      # Watch the maximum duration not the average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
@@ -369,6 +409,26 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
+  # CloudWatch Duration Alarms
+  AnalyticsLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-duration
+      AlarmDescription: Analytics Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
+      Statistic: Maximum
+      # Watch the maximum duration not the average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   # ─── Tami — Health Check (MVP) ───
   # GET /health — confirms all services are connected
   # Unique AWS service: API Gateway + AWS SAM
@@ -413,6 +473,26 @@ Resources:
         # Alarm if 3 or more errors in 5 minutes
         ComparisonOperator: GreaterThanOrEqualToThreshold
         TreatMissingData: notBreaching
+
+  # CloudWatch Duration Alarms
+  HealthLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-health-duration
+      AlarmDescription: Health Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HealthFunction
+      Statistic: Maximum
+      # Watch the maximum duration not the average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
   # ─────────────────────────────────────────
   # CLOUDWATCH LOG GROUPS — Tami owns this
