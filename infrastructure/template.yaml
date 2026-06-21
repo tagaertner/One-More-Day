@@ -208,7 +208,8 @@ Resources:
             Path: /habits/{id}
             Method: DELETE
 
-    # Lambda error alarms
+  # ─── Lambda Error Alarms ───
+  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   HabitsLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -227,7 +228,8 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # CloudWatch Duration Alarms
+  # ─── CloudWatch Duration Alarms ───
+  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   HabitsLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -284,7 +286,8 @@ Resources:
             Path: /habits/{id}/history
             Method: GET
 
-  # Lambda Error Alarm
+  # ─── Lambda Error Alarms ───
+  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   CheckinLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -303,7 +306,8 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # CloudWatch Duration Alarms
+  # ─── CloudWatch Duration Alarms ───
+  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   CheckinLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -390,7 +394,8 @@ Resources:
             Path: /report/export
             Method: GET
 
-  # Lambda error alarm
+  # ─── Lambda Error Alarms ───
+  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   AnalyticsLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -409,7 +414,8 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # CloudWatch Duration Alarms
+  # ─── CloudWatch Duration Alarms ───
+  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   AnalyticsLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -456,25 +462,28 @@ Resources:
             Path: /health
             Method: GET
 
-    HealthLambdaErrorAlarm:
-      Type: AWS::CloudWatch::Alarm
-      Properties:
-        AlarmName: one-more-day-health-errors
-        AlarmDescription: Health Lambda erroring — infrastructure may be degraded
-        MetricName: Errors
-        Namespace: AWS/Lambda
-        Dimensions:
-          - Name: FunctionName
-            Value: !Ref HealthFunction
-        Statistic: Sum
-        Period: 300
-        EvaluationPeriods: 1
-        Threshold: 3
-        # Alarm if 3 or more errors in 5 minutes
-        ComparisonOperator: GreaterThanOrEqualToThreshold
-        TreatMissingData: notBreaching
+  # ─── Lambda Error Alarms ───
+  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
+  HealthLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-health-errors
+      AlarmDescription: Health Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HealthFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      # Alarm if 3 or more errors in 5 minutes
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
 
-  # CloudWatch Duration Alarms
+  # ─── CloudWatch Duration Alarms ───
+  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   HealthLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -491,6 +500,40 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 25000
       # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── CloudWatch Throttle Alarms ───
+  # Fires if Lambda or DynamoDB requests are being throttled — reduce concurrent calls
+  LambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-lambda-throttles
+      AlarmDescription: Lambda invocations being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      # Zero tolerance — any throttle is a problem
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-dynamodb-throttles
+      AlarmDescription: DynamoDB throttling requests — reduce concurrent calls
+      MetricName: ThrottledRequests
+      Namespace: AWS/DynamoDB
+      Dimensions:
+        - Name: TableName
+          Value: !Ref HabitsTable
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
