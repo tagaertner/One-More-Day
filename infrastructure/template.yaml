@@ -28,6 +28,16 @@ Resources:
         - AttributeName: SK
           KeyType: RANGE
 
+  # ─── Dead Letter Queue ───
+  # Captures failed async invocations from EventBridge (Aksana's stretch goal)
+  # Without this, failed reminder events would be silently dropped after retries
+  HabitsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: one-more-day-habits-dlq
+      MessageRetentionPeriod: 1209600
+      # Retain failed messages for 14 days
+
   # ─── API Gateway ───
   # Routes all four services through one endpoint
   # Base URL: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
@@ -53,10 +63,12 @@ Resources:
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
         AllowOrigin: "'*'"
 
+  # ─── API Gateway Error Alarms ───
   ApiGateway4xxAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: one-more-day-api-4xx-errors
+      AlarmDescription: API Gateway returning high 4xx errors — possible auth or request issues
       MetricName: 4XXError
       Namespace: AWS/ApiGateway
       Dimensions:
@@ -73,6 +85,7 @@ Resources:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: one-more-day-api-5xx-errors
+      AlarmDescription: API Gateway returning 5xx errors — Lambda is crashing
       MetricName: 5XXError
       Namespace: AWS/ApiGateway
       Dimensions:
@@ -182,6 +195,10 @@ Resources:
       Tracing: Active
       Timeout: 30
       MemorySize: 128
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt HabitsDeadLetterQueue.Arn
+        # Failed async invocations land here instead of being silently dropped
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref HabitsTable
@@ -192,6 +209,9 @@ Resources:
         - AWSXrayWriteOnlyAccess
         - SESCrudPolicy:
             IdentityName: !Ref SESEmailIdentity
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt HabitsDeadLetterQueue.QueueName
+            # Allows Lambda to send failed events to the DLQ
       Events:
         CreateHabit:
           Type: Api
@@ -228,7 +248,6 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 3
-      # Alarm if 3 or more errors in 5 minutes
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
@@ -293,12 +312,11 @@ Resources:
             Method: GET
 
   # ─── Lambda Error Alarms ───
-  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   CheckinLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
       AlarmName: one-more-day-checkin-errors
-      AlarmDescription: CheckinLambda erroring — infrastructure may be degraded
+      AlarmDescription: Checkin Lambda erroring — infrastructure may be degraded
       MetricName: Errors
       Namespace: AWS/Lambda
       Dimensions:
@@ -308,12 +326,10 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 3
-      # Alarm if 3 or more errors in 5 minutes
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
   # ─── CloudWatch Duration Alarms ───
-  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   CheckinLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -325,11 +341,9 @@ Resources:
         - Name: FunctionName
           Value: !Ref CheckinFunction
       Statistic: Maximum
-      # Watch the maximum duration not the average
       Period: 300
       EvaluationPeriods: 1
       Threshold: 25000
-      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
@@ -403,7 +417,6 @@ Resources:
             Method: GET
 
   # ─── Lambda Error Alarms ───
-  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   AnalyticsLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -418,12 +431,10 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 3
-      # Alarm if 3 or more errors in 5 minutes
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
   # ─── CloudWatch Duration Alarms ───
-  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   AnalyticsLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -435,11 +446,9 @@ Resources:
         - Name: FunctionName
           Value: !Ref AnalyticsFunction
       Statistic: Maximum
-      # Watch the maximum duration not the average
       Period: 300
       EvaluationPeriods: 1
       Threshold: 25000
-      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
@@ -473,7 +482,6 @@ Resources:
             Method: GET
 
   # ─── Lambda Error Alarms ───
-  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
   HealthLambdaErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -488,12 +496,10 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 3
-      # Alarm if 3 or more errors in 5 minutes
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
   # ─── CloudWatch Duration Alarms ───
-  # Warns if a Lambda is running close to its 30s timeout — may be hanging
   HealthLambdaDurationAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -505,11 +511,9 @@ Resources:
         - Name: FunctionName
           Value: !Ref HealthFunction
       Statistic: Maximum
-      # Watch the maximum duration not the average
       Period: 300
       EvaluationPeriods: 1
       Threshold: 25000
-      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
@@ -526,7 +530,6 @@ Resources:
       Period: 300
       EvaluationPeriods: 1
       Threshold: 1
-      # Zero tolerance — any throttle is a problem
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
