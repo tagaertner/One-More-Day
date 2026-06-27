@@ -4,7 +4,7 @@ Description: One More Day — Serverless backend infrastructure
 
 Resources:
   # ─────────────────────────────────────────
-  # SHARED INFRASTRUCTURE — Tami owns this
+  # SHARED INFRASTRUCTURE
   # ─────────────────────────────────────────
 
   # ─── DynamoDB Table ───
@@ -38,6 +38,47 @@ Resources:
       MessageRetentionPeriod: 1209600
       # Retain failed messages for 14 days
 
+  # ─── Cognito User Pool ───
+  # Stores user information and verifies the password is correct
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: one-more-day-user
+      AutoVerifiedAttributes: []
+      # Empty = no forced email verification - Path A
+      # Path B later: change to AutoVerificationAttributs: [email]
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  # ─── Cognito User Pool Client  ───
+  # Permission/configuration records what says which apps are allowed to talk to the UserPool
+  # 7 days of total inactivity: RefreshToken dies, nothing left to silently replace
+  # Every 60 min: IdToken dies -> silently replace -> user sees nothing.
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: one-more-day-app-client
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        RefreshToken: days
+
   # ─── API Gateway ───
   # Routes all four services through one endpoint
   # Base URL: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
@@ -48,16 +89,10 @@ Resources:
       Name: one-more-day-api
       StageName: prod
       Auth:
-        ApiKeyRequired: true
-        UsagePlan:
-          CreateUsagePlan: PER_API
-          UsagePlanName: one-more-day-usage-plan
-          Quota:
-            Limit: 10000
-            Period: MONTH
-          Throttle:
-            BurstLimit: 100
-            RateLimit: 50
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+        DefaultAuthorizer: CognitoAuthorizer
       Cors:
         AllowMethods: "'GET,POST,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
@@ -98,6 +133,8 @@ Resources:
       # Zero tolerance — even one 5xx is urgent
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+
+  #
 
   # ─── S3 Buckets ───
   # ReportsBucket — Nilu's Lambda writes weekly report JSON here (MVP)
@@ -596,3 +633,11 @@ Outputs:
   ApiGatewayId:
     Description: API Gateway ID
     Value: !Ref ApiGateway
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
