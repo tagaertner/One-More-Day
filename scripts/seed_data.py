@@ -11,11 +11,14 @@ start_date = datetime(2026, 4, 13)
 end_date = datetime(2026, 6, 12)
 
 # ─── User profiles ───
+# Keys are real Cognito `sub` values — pulled via:
+# aws cognito-idp list-users --user-pool-id $COGNITO_USER_POOL_ID \
+#   --query "Users[].{email:Attributes[?Name=='email']|[0].Value,sub:Attributes[?Name=='sub']|[0].Value}"
 users = {
-    'aksana-dev': {'email': 'aksana@example.com', 'name': 'Aksana', 'time': '08:00', 'tz': 'EST'},
-    'melody-dev': {'email': 'melody@example.com', 'name': 'Melody', 'time': '20:00', 'tz': 'PST'},
-    'nilu-dev':   {'email': 'nilu@example.com',   'name': 'Nilu',   'time': '07:30', 'tz': 'GMT'},
-    'tami-dev':   {'email': 'tami@example.com',   'name': 'Tami',   'time': '18:00', 'tz': 'EST'},
+    'f458b498-e0c1-7019-2c53-f757e908294a': {'email': 'aksana@example.com', 'name': 'Aksana', 'time': '08:00', 'tz': 'EST'},
+    '2458b438-1041-70a1-b2d3-15c83f530be1': {'email': 'melody@example.com', 'name': 'Melody', 'time': '20:00', 'tz': 'PST'},
+    'e4e8a428-f021-701f-d94c-dad182f1144b': {'email': 'nilu@example.com',   'name': 'Nilu',   'time': '07:30', 'tz': 'GMT'},
+    '94b87438-7001-701f-bfc8-d433f4b4442d': {'email': 'tami@example.com',   'name': 'Tami',   'time': '18:00', 'tz': 'EST'},
 }
 
 sample_notes = [
@@ -45,7 +48,7 @@ def declining(d, start): days = (d - start).days; return days < 30 and d.weekday
 def strong_then_break(d, start): days = (d - start).days; return days < 20 or (days > 35 and d.weekday() < 5)
 
 user_habits = {
-    'aksana-dev': [
+    'f458b498-e0c1-7019-2c53-f757e908294a': [  # Aksana
         # Health dominant — crushing water and sleep, struggling with fitness
         {'id': 'aksana001', 'name': 'Drink 8 glasses of water', 'category': 'Health',
          'fn': lambda d: high_compliance_breaks_sundays(d)},
@@ -60,7 +63,7 @@ user_habits = {
         {'id': 'aksana006', 'name': 'No alcohol', 'category': 'Health',
          'fn': lambda d: every_day(d)},
     ],
-    'melody-dev': [
+    '2458b438-1041-70a1-b2d3-15c83f530be1': [  # Melody
         # Learning + Mind dominant — strong LeetCode, inconsistent meditation
         {'id': 'melody001', 'name': 'LeetCode', 'category': 'Learning',
          'fn': lambda d: weekdays_only(d)},
@@ -75,7 +78,7 @@ user_habits = {
         {'id': 'melody006', 'name': 'Watch a tutorial', 'category': 'Learning',
          'fn': lambda d: d.weekday() in [1, 3, 5]},
     ],
-    'nilu-dev': [
+    'e4e8a428-f021-701f-d94c-dad182f1144b': [  # Nilu
         # Productivity dominant — perfect on planning, weak on finance
         {'id': 'nilu001', 'name': 'Plan tomorrow', 'category': 'Productivity',
          'fn': lambda d: every_day(d)},
@@ -90,7 +93,7 @@ user_habits = {
         {'id': 'nilu006', 'name': 'Work on capstone', 'category': 'Productivity',
          'fn': lambda d: every_day(d)},
     ],
-    'tami-dev': [
+    '94b87438-7001-701f-bfc8-d433f4b4442d': [  # Tami
         # Mixed — strong Learning, inconsistent Mind and Finance
         {'id': 'tami001', 'name': 'LeetCode', 'category': 'Learning',
          'fn': lambda d, s=start_date: strong_then_break(d, s)},
@@ -115,7 +118,7 @@ total_checkins = 0
 total_habits = 0
 
 for user, prefs in users.items():
-    print(f"\nSeeding {user}...")
+    print(f"\nSeeding {prefs['name']} ({user})...")
 
     # USER profile
     table.put_item(Item={
@@ -194,7 +197,7 @@ for user, prefs in users.items():
         total_habits += 1
 
 print(f"\n✅ Seed data loaded successfully")
-print(f"   4 users")
+print(f"   4 users (real Cognito sub values)")
 print(f"   {total_habits} habits (6 per user)")
 print(f"   {total_checkins} check-in records")
 print(f"   60 days of history (2026-04-13 to 2026-06-12)")
