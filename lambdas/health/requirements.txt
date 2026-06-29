@@ -1,3 +1,0 @@
-pytest
-moto[dynamodb,s3,sns]
-boto3

@@ -2,7 +2,7 @@
 
 A serverless habit tracker built with Python, AWS Lambda, DynamoDB, and Streamlit.
 
-**Live app:** https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app  
+**Live app:** https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app
 **API base URL:** https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod
 
 ---
@@ -11,7 +11,7 @@ A serverless habit tracker built with Python, AWS Lambda, DynamoDB, and Streamli
 
 ![System Architecture](docs/system_design.png)
 
-> User → Streamlit Frontend → API Gateway → Lambda Functions → DynamoDB / SNS / S3 / CloudWatch  
+> User → Streamlit Frontend (login required) → API Gateway (Cognito auth) → Lambda Functions → DynamoDB / SNS / S3 / CloudWatch
 > GitHub → GitHub Actions → AWS SAM → AWS infrastructure
 
 ---
@@ -23,7 +23,8 @@ A serverless habit tracker built with Python, AWS Lambda, DynamoDB, and Streamli
 | Language       | Python 3.11                                           |
 | Functions      | AWS Lambda — one per engineer                         |
 | Database       | DynamoDB — single table, pay per request              |
-| API            | AWS API Gateway — all endpoints, API key required     |
+| Auth           | AWS Cognito — real login required on every endpoint   |
+| API            | AWS API Gateway — all endpoints, Cognito-authorized   |
 | Frontend       | Streamlit — deployed on Community Cloud               |
 | Infrastructure | AWS SAM — infrastructure as code                      |
 | CI/CD          | GitHub Actions — tests + deploy on every merge to dev |
@@ -47,26 +48,27 @@ one-more-day/
 │   │   ├── requirements.txt
 │   │   └── tests/
 │   ├── analytics/           ← Nilu
-│   │   ├── handler.py
-│   │   ├── Dockerfile
-│   │   ├── requirements.txt
-│   │   └── tests/
-│   └── health/              ← Tami
 │       ├── handler.py
 │       ├── Dockerfile
 │       ├── requirements.txt
 │       └── tests/
 ├── streamlit/
-│   ├── app.py               ← main entry point
+│   ├── app.py               ← main entry point, requires login first
+│   ├── login_page.py        ← Tami — login, sign up, shared call_api() helper
 │   ├── habits_page.py       ← Aksana
 │   ├── checkin_page.py      ← Melody
-│   ├── analytics_page.py    ← Nilu
-│   └── health_page.py       ← Tami
+│   └── analytics_page.py    ← Nilu
+├── docs/
+│   └── examples/            ← reference only, not part of the live app
+│       ├── health_page_example.py
+│       └── test_health_example.py
 ├── infrastructure/
 │   └── template.yaml        ← AWS SAM — all infrastructure defined here
 ├── scripts/
-│   ├── seed_data.py         ← seeds DynamoDB with test data
-│   └── smoke_test.py        ← confirms all endpoints are live after deploy
+│   ├── seed_data.py             ← seeds DynamoDB with test data
+│   ├── create_cognito_users.py  ← one-time script, creates the 4 real accounts
+│   ├── get_token.py             ← self-serve script to get a real login token
+│   └── smoke_test.py            ← confirms all endpoints are live after deploy
 ├── docker-compose.yml       ← runs all four Lambdas locally
 ├── .env.example             ← copy this to .env and fill in your values
 └── .github/workflows/       ← CI/CD pipeline — do not touch
@@ -111,13 +113,15 @@ SNS_TOPIC_ARN=arn:aws:sns:us-east-1:061361823578:one-more-day-checkin-notificati
 
 # API
 API_BASE_URL=https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod
-API_KEY=your_api_key_here
+
+# Cognito — auth is handled by Cognito, not an API key
+# Get these from Tami, or run:
+# aws cloudformation describe-stacks --stack-name one-more-day --query "Stacks[0].Outputs"
+COGNITO_USER_POOL_ID=your_user_pool_id_here
+COGNITO_CLIENT_ID=your_user_pool_client_id_here
 
 # Streamlit
 STREAMLIT_URL=https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app
-
-# Your local test prefix — change this to your own
-LOCAL_USER_ID=your-dev-prefix-here
 
 # Stretch goal variables — only needed when working on stretch features
 ATHENA_WORKGROUP=one-more-day-workgroup
@@ -129,16 +133,18 @@ BEDROCK_MODEL_ID=your_bedrock_model_id_here
 
 > **Never commit your .env file. It is already in .gitignore.**
 
-### Step 3 — Set your userId prefix
+### Step 3 — Log in with your real account
 
-Each person uses their own prefix so nobody overwrites each other's test data:
+Authentication is handled by AWS Cognito — there is no more shared API key or `userId` prefix to set manually. Each person logs in with their own real email and password through the Streamlit login page.
 
-| Person | LOCAL_USER_ID |
-| ------ | ------------- |
-| Aksana | aksana-dev    |
-| Melody | melody-dev    |
-| Nilu   | nilu-dev      |
-| Tami   | tami-dev      |
+| Person | Email              |
+| ------ | ------------------ |
+| Tami   | tami@example.com   |
+| Aksana | aksana@example.com |
+| Melody | melody@example.com |
+| Nilu   | nilu@example.com   |
+
+Get your password from Tami securely. Your real `userId` going forward is your Cognito `sub` — pulled automatically from your login token, never set manually.
 
 ### Step 4 — Configure AWS CLI
 
@@ -159,8 +165,6 @@ Confirm it works:
 aws sts get-caller-identity
 ```
 
-You should see your username in the Arn — `aksana-dev`, `melody-dev`, or `nilu-dev`.
-
 ### Step 5 — Confirm DynamoDB connection
 
 ```bash
@@ -169,7 +173,15 @@ aws dynamodb describe-table --table-name one-more-day-habits
 
 You should see the table details. If you get an error check your credentials and confirm your region is us-east-1.
 
-### Step 6 — Create your feature branch
+### Step 6 — Get a test token (optional, useful for curl/Postman testing)
+
+```bash
+python scripts/get_token.py
+```
+
+Enter your email and password — this prints a real Cognito token you can use directly in curl commands without opening the full Streamlit app.
+
+### Step 7 — Create your feature branch
 
 ```bash
 git checkout -b feature/aksana-habits     # Aksana
@@ -179,11 +191,22 @@ git checkout -b feature/nilu-analytics    # Nilu
 
 ---
 
+## Logging In to the App
+
+Open the Streamlit app — you will land on a login screen, not the main app. Two tabs:
+
+- **Log In** — use one of the real accounts above
+- **Sign Up** — create a brand new account (no email verification required for MVP — your account works immediately after signing up)
+
+Once logged in your session stays active and silently refreshes itself in the background — you will not be asked to log in again unless you are inactive for 7+ days.
+
+---
+
 ## Running Locally with Docker
 
 Docker is already configured — Dockerfiles and docker-compose.yml are set up for you. You just need Docker Desktop installed and running on your machine.
 
-**Install Docker Desktop:** docker.com/products/docker-desktop  
+**Install Docker Desktop:** docker.com/products/docker-desktop
 Make sure the whale icon is visible in your menu bar before continuing.
 
 ### Start DynamoDB Local + your Lambda
@@ -196,7 +219,6 @@ docker compose up dynamodb-local
 docker compose up habits      # Aksana  — runs on port 8001
 docker compose up checkin     # Melody  — runs on port 8002
 docker compose up analytics   # Nilu    — runs on port 8003
-docker compose up health      # Tami    — runs on port 8004
 ```
 
 ### Test your Lambda locally
@@ -220,7 +242,7 @@ docker compose down
 
 ## DynamoDB Schema
 
-**Table name:** `one-more-day-habits`  
+**Table name:** `one-more-day-habits`
 **Region:** `us-east-1`
 
 ### Primary Key Structure
@@ -229,6 +251,8 @@ docker compose down
 | ------------------ | ------------- | ------ |
 | Partition key (PK) | userId        | String |
 | Sort key (SK)      | recordType#id | String |
+
+`userId` is the real Cognito `sub` value for each person — not a manually chosen prefix.
 
 ### Item Types
 
@@ -242,7 +266,7 @@ docker compose down
 
 ```json
 {
-  "userId": "aksana-dev",
+  "userId": "f458b498-e0c1-7019-2c53-f757e908294a",
   "SK": "HABIT#abc123",
   "habitId": "abc123",
   "habitName": "Drink water",
@@ -260,7 +284,7 @@ docker compose down
 
 ```json
 {
-  "userId": "melody-dev",
+  "userId": "2458b438-1041-70a1-b2d3-15c83f530be1",
   "SK": "CHECKIN#abc123#2026-06-12",
   "habitId": "abc123",
   "date": "2026-06-12",
@@ -274,7 +298,7 @@ docker compose down
 
 ```json
 {
-  "userId": "aksana-dev",
+  "userId": "f458b498-e0c1-7019-2c53-f757e908294a",
   "SK": "USER#profile",
   "email": "aksana@example.com",
   "name": "Aksana",
@@ -301,12 +325,15 @@ Always use exactly one of these six values. Never use a custom category — it w
 
 ## API Endpoints
 
-All endpoints require the `x-api-key` header.
+All endpoints require a real Cognito login token in the `Authorization` header. There is no API key anymore.
 
 ```bash
-# Example
+# Get a token first
+python scripts/get_token.py
+
+# Then use it
 curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 | Method | Endpoint              | Owner  | Description                              |
@@ -318,7 +345,25 @@ curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \
 | GET    | /habits/{id}/history  | Melody | View completion history (if time allows) |
 | GET    | /stats                | Nilu   | Weekly progress summary                  |
 | GET    | /report/export        | Nilu   | Export report to S3                      |
-| GET    | /health               | Tami   | System health check                      |
+
+> System health is no longer exposed through the app — see **Observability** below.
+
+### Calling the API from Streamlit
+
+Use the shared helper instead of calling `requests` directly — it automatically attaches your login token and silently refreshes it if expired:
+
+```python
+import login_page
+
+response = login_page.call_api("/habits", method="GET")
+response = login_page.call_api("/habits", method="POST", json={"habitName": "Drink water", "category": "Health"})
+```
+
+The `userId` on the backend now comes from your verified token, not anything you send — every Lambda reads it like this:
+
+```python
+user_id = event['requestContext']['authorizer']['claims']['sub']
+```
 
 ### Standard error response
 
@@ -334,6 +379,19 @@ Every Lambda returns this shape on failure — use the same shape in your code:
 
 ---
 
+## Observability
+
+System health is monitored through a native **AWS CloudWatch Dashboard** instead of an in-app page — showing this kind of internal infrastructure detail to end users is a security exposure, and a real health check should never trigger side effects (like accidentally creating data).
+
+View it at: AWS Console → CloudWatch → Dashboards → `one-more-day-system-health`
+(Requires your IAM credentials — ask Tami if you get an access denied error.)
+
+The dashboard shows Lambda errors, duration, throttles, API Gateway 4xx/5xx rates, and DynamoDB capacity — all pulled from alarms already deployed in `template.yaml`.
+
+A reference copy of the original in-app health check (and its test pattern) is kept at `docs/examples/` for learning purposes only — it is not part of the live app.
+
+---
+
 ## Running Tests
 
 Each Lambda has a `tests/` folder with at least two tests. Run them locally before pushing:
@@ -346,7 +404,6 @@ pip install -r lambdas/habits/requirements.txt
 pytest lambdas/habits/tests/     # Aksana
 pytest lambdas/checkin/tests/    # Melody
 pytest lambdas/analytics/tests/  # Nilu
-pytest lambdas/health/tests/     # Tami
 ```
 
 ### Using moto to mock AWS services
@@ -354,11 +411,11 @@ pytest lambdas/health/tests/     # Tami
 Use `moto` in your tests so you never hit the real DynamoDB table during testing:
 
 ```python
-from moto import mock_dynamodb
+from moto import mock_aws
 import boto3
 import json
 
-@mock_dynamodb
+@mock_aws
 def test_create_habit():
     # moto creates a fake DynamoDB table in memory
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -376,10 +433,12 @@ def test_create_habit():
     )
     # call your Lambda handler with a test event
     from handler import lambda_handler
-    event = {'body': json.dumps({'habitName': 'Drink water', 'category': 'Health', 'userId': 'aksana-dev'})}
+    event = {'body': json.dumps({'habitName': 'Drink water', 'category': 'Health'})}
     response = lambda_handler(event, None)
     assert response['statusCode'] == 200
 ```
+
+See `docs/examples/test_health_example.py` for a complete working example of this pattern.
 
 ---
 
@@ -395,7 +454,7 @@ You do not trigger this manually. It just fires when you merge to dev.
 
 **Watch your pipeline:** github.com/tagaertner/One-More-Day → Actions tab
 
-After every successful deploy a smoke test runs automatically to confirm all core endpoints are live.
+After every successful deploy a smoke test runs automatically — it logs in with a real Cognito test account and confirms the API is live and authenticated correctly.
 
 ---
 
@@ -433,11 +492,13 @@ git push origin feature/your-branch
 | Resource              | Name                               |
 | --------------------- | ---------------------------------- |
 | DynamoDB table        | one-more-day-habits                |
+| Cognito User Pool     | one-more-day-user                  |
 | S3 reports bucket     | one-more-day-reports               |
 | S3 logs bucket        | one-more-day-habit-logs            |
 | SNS topic             | one-more-day-checkin-notifications |
 | API Gateway           | one-more-day-api                   |
 | CloudWatch log groups | /aws/lambda/one-more-day-\*        |
+| CloudWatch Dashboard  | one-more-day-system-health         |
 | CloudFormation stack  | one-more-day                       |
 | Athena workgroup      | one-more-day-workgroup             |
 
@@ -465,25 +526,28 @@ aws logs filter-log-events \
 ## If Something Is Broken
 
 1. Check CloudWatch logs first — that is where the real error is
-2. Run the health check to confirm infrastructure is up:
+2. Get a fresh token and confirm infrastructure is up:
 
 ```bash
+python scripts/get_token.py
+
 curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \
-  -H "x-api-key: YOUR_API_KEY"
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
-3. Confirm your AWS credentials are correct: `aws sts get-caller-identity`
-4. Confirm you are in us-east-1: `aws configure get region`
-5. Confirm your .env values match what is in .env.example
-6. Post in the group chat the same day — do not sit on a blocker for 24 hours
+3. If you get `{"message":"Unauthorized"}` — your token may have expired, get a fresh one
+4. Confirm your AWS credentials are correct: `aws sts get-caller-identity`
+5. Confirm you are in us-east-1: `aws configure get region`
+6. Confirm your .env values match what is in .env.example
+7. Post in the group chat the same day — do not sit on a blocker for 24 hours
 
 ---
 
 ## Contacts
 
-| Person | Role                          | userId prefix |
-| ------ | ----------------------------- | ------------- |
-| Tami   | Infrastructure + Health Check | tami-dev      |
-| Aksana | Habit Management              | aksana-dev    |
-| Melody | Daily Check-In                | melody-dev    |
-| Nilu   | Analytics + Dashboard         | nilu-dev      |
+| Person | Role                  | Email              |
+| ------ | --------------------- | ------------------ |
+| Tami   | Infrastructure + Auth | tami@example.com   |
+| Aksana | Habit Management      | aksana@example.com |
+| Melody | Daily Check-In        | melody@example.com |
+| Nilu   | Analytics + Dashboard | nilu@example.com   |

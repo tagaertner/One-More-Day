@@ -30,8 +30,7 @@ try:
 
     print(f"\n✅ Login successful")
     print(f"\nYour token:\n{token}\n")
-    print("Use it like this:")
-    print(f'curl https://3utc3xlera.execute-api.us-east-1.amazonaws.com/prod/health \\')
+    print("Add this header to any API request:")
     print(f'  -H "Authorization: Bearer {token}"')
 
 except client.exceptions.NotAuthorizedException:

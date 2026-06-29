@@ -29,4 +29,6 @@ jobs:
         run: python scripts/smoke_test.py
         env:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          API_KEY: ${{ secrets.API_KEY }}
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
