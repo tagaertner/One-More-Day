@@ -68,4 +68,9 @@ def lambda_handler(event, context):
     }
 # smoke test trigger
 # demo CI/CD for team
+<<<<<<< HEAD
+# retest smoke test part 2
+=======
+# retest smoke test with cognito secrets
+>>>>>>> 11745b879efb5b930ee9ac3317a178aac41a88f8
 # retest smoke test part 2
