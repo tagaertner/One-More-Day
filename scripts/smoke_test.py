@@ -22,28 +22,24 @@ def get_test_token():
     )
     return response['AuthenticationResult']['IdToken']
 
+def test_habits(headers):
+    r = requests.get(f"{BASE_URL}/habits", headers=headers)
+    assert r.status_code == 200, f"GET /habits failed: {r.status_code}"
+    print("✅ GET /habits — ok")
+    
+if __name__ == "__main__":
+    print("Running smoke tests...")
+    try:
+        token = get_test_token()
+        headers = {"Authorization": f"Bearer {token}"}
 
-# def test_health(headers):
-#     r = requests.get(f"{BASE_URL}/health", headers=headers)
-#     assert r.status_code == 200, f"Health check failed: {r.status_code}"
-#     body = r.json()
-#     assert body["status"] == "ok", f"Health status not ok: {body}"
-#     print("✅ GET /health — ok")
+        test_habits(headers)
 
-
-# if __name__ == "__main__":
-#     print("Running smoke tests...")
-#     try:
-#         token = get_test_token()
-#         headers = {"Authorization": f"Bearer {token}"}
-
-#         test_health(headers)
-
-#         print("\n✅ All smoke tests passed")
-#         sys.exit(0)
-#     except AssertionError as e:
-#         print(f"\n❌ Smoke test failed: {e}")
-#         sys.exit(1)
-#     except Exception as e:
-#         print(f"\n❌ Smoke test failed — could not get Cognito token: {e}")
-#         sys.exit(1)
+        print("\n✅ All smoke tests passed")
+        sys.exit(0)
+    except AssertionError as e:
+        print(f"\n❌ Smoke test failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n❌ Smoke test failed — could not get Cognito token: {e}")
+        sys.exit(1)
