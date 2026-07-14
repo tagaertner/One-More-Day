@@ -6,8 +6,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_URL = os.environ.get("API_BASE_URL", "")
-API_KEY = os.environ.get("API_KEY", "")
-headers = {"x-api-key": API_KEY}
 USER_ID = os.environ.get("LOCAL_USER_ID", "tami-dev")
 
 

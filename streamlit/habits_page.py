@@ -21,9 +21,6 @@ import streamlit as st
 
 def show():
     st.title("Habit Management")
-    st.write("Aksana's habits page — coming soon.")# retest smoke test part 3
-# retest smoke test part 4
-# play it again sam t part 5
-# play it again sam part 6
-# play it again sam part 7
+    st.write("Aksana's habits page — coming soon.")
+
 
