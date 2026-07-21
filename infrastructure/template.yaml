@@ -560,15 +560,51 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # ─── CloudWatch Throttle Alarms ───
-  # Fires if Lambda or DynamoDB requests are being throttled — reduce concurrent calls
-  LambdaThrottleAlarm:
+  # ─── CloudWatch Throttle Alarms — per function ───
+  HabitsLambdaThrottleAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: one-more-day-lambda-throttles
-      AlarmDescription: Lambda invocations being throttled — hitting concurrency limit
+      AlarmName: one-more-day-habits-throttles
+      AlarmDescription: Habits Lambda being throttled — hitting concurrency limit
       MetricName: Throttles
       Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  CheckinLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-throttles
+      AlarmDescription: Checkin Lambda being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  AnalyticsLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-throttles
+      AlarmDescription: Analytics Lambda being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
@@ -593,12 +629,9 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # ─── CloudWatch Dashboard ───
-
   # ─────────────────────────────────────────
-  # CLOUDWATCH LOG GROUPS — Tami owns this
+  # CLOUDWATCH LOG GROUPS
   # ─────────────────────────────────────────
-
   # ─── Log Groups ───
   # One log group per Lambda function
   # Logs are retained for 30 days to keep costs low
@@ -610,10 +643,16 @@ Resources:
       LogGroupName: /aws/lambda/one-more-day-habits
       RetentionInDays: 30
       Tags:
-        Project: one-more-day
-        Environment: prod
-        Owner: tami
-        ManagedBy: sam
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: aksana
+        - Key: ManagedBy
+          Value: sam
 
   CheckinLogGroup:
     Type: AWS::Logs::LogGroup
@@ -621,10 +660,16 @@ Resources:
       LogGroupName: /aws/lambda/one-more-day-checkin
       RetentionInDays: 30
       Tags:
-        Project: one-more-day
-        Environment: prod
-        Owner: tami
-        ManagedBy: sam
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: melody
+        - Key: ManagedBy
+          Value: sam
 
   AnalyticsLogGroup:
     Type: AWS::Logs::LogGroup
@@ -632,13 +677,147 @@ Resources:
       LogGroupName: /aws/lambda/one-more-day-analytics
       RetentionInDays: 30
       Tags:
-        Project: one-more-day
-        Environment: prod
-        Owner: tami
-        ManagedBy: sam
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: nilu
+        - Key: ManagedBy
+          Value: sam
+
+  # ─────────────────────────────────────────
+  # CloudWatch — Dashboard
+  # ─────────────────────────────────────────
+  OneMoreDayDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: one-more-day-system-health
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Lambda Errors — All Functions",
+                "metrics": [
+                  ["AWS/Lambda", "Errors", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "${AnalyticsFunction}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Lambda Duration — All Functions",
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${AnalyticsFunction}"]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "API Gateway 4xx / 5xx Errors",
+                "metrics": [
+                  ["AWS/ApiGateway", "4XXError", "ApiName", "one-more-day-api"],
+                  ["AWS/ApiGateway", "5XXError", "ApiName", "one-more-day-api"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Throttles — Lambda + DynamoDB",
+                "metrics": [
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${AnalyticsFunction}"],
+                  ["AWS/DynamoDB", "ThrottledRequests", "TableName", "${HabitsTable}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 12, "width": 24, "height": 6,
+              "properties": {
+                "title": "DynamoDB Consumed Capacity",
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${HabitsTable}"],
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "${HabitsTable}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "alarm",
+              "x": 0, "y": 18, "width": 24, "height": 6,
+              "properties": {
+                "title": "All Active Alarms",
+                "alarms": [
+                  "${HabitsLambdaErrorAlarm.Arn}",
+                  "${CheckinLambdaErrorAlarm.Arn}",
+                  "${AnalyticsLambdaErrorAlarm.Arn}",
+                  "${ApiGateway4xxAlarm.Arn}",
+                  "${ApiGateway5xxAlarm.Arn}",
+                  "${HabitsLambdaThrottleAlarm.Arn}",
+                  "${CheckinLambdaThrottleAlarm.Arn}",
+                  "${AnalyticsLambdaThrottleAlarm.Arn}",
+                  "${DynamoDBThrottleAlarm.Arn}"
+                ]
+              }
+            }
+          ]
+        }
+
+  DevTeamCloudWatchViewPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: one-more-day-dev-cloudwatch-view
+      Description: Read-only access to view the CloudWatch dashboard, alarms, and metrics
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListDashboards
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricWidgetImage
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmsForMetric
+              - cloudwatch:ListMetrics
+            Resource: "*"
+      Users:
+        - aksana-dev
+        - melody-dev
+        - nilu-dev
 
 # ─────────────────────────────────────────
-# OUTPUTS — API Gateway URL and ID
+# OUTPUTS — API Gateway URL and ID, UserPoolID, UserPoolClientId and Dashboard
 # Available after deploy via:
 # aws cloudformation describe-stacks --stack-name one-more-day --query "Stacks[0].Outputs"
 # ─────────────────────────────────────────
@@ -658,3 +837,7 @@ Outputs:
   UserPoolClientId:
     Description: Cognito User Pool Client ID
     Value: !Ref UserPoolClient
+
+  DashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=${OneMoreDayDashboard}"
