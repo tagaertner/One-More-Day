@@ -118,7 +118,7 @@ def list_habits(event):
 
 def delete_habit(event):
     user_id = get_user_id(event)
-    habit_id = event["pathParameters"]["habitId"]
+    habit_id = event["pathParameters"]["id"]
 
     response = table.update_item(
         Key={
