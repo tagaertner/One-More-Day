@@ -205,7 +205,7 @@ def test_delete_habit():
     event = {
         "httpMethod": "DELETE",
         "pathParameters": {
-            "habitId": "1"
+            "id": "1"
         },
         "requestContext": {
             "authorizer": {
@@ -238,7 +238,7 @@ def test_delete_sets_deleted_timestamp():
         Item={
             "userId": "aksana-dev",
             "SK": "HABIT#1",
-            "habitId": "1",
+            "id": "1",
             "habitName": "Read",
             "category": "Learning",
             "active": True
@@ -248,7 +248,7 @@ def test_delete_sets_deleted_timestamp():
     event = {
         "httpMethod": "DELETE",
         "pathParameters": {
-            "habitId": "1"
+            "id": "1"
         },
         "requestContext": {
             "authorizer": {
