@@ -169,4 +169,4 @@ def lambda_handler(event, context):
 def decimal_to_int(obj):
     if isinstance(obj, Decimal):
         return int(obj)
-    raise TypeError
+    raise TypeError# trigger e2e tests
