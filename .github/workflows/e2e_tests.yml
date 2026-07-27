@@ -1,0 +1,30 @@
+name: Playwright E2E Tests
+
+on:
+  workflow_run:
+    workflows:
+      - Deploy Habits Lambda
+      - Deploy Checkin Lambda
+      - Deploy Analytics Lambda
+    types:
+      - completed
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install playwright pytest-playwright
+
+      - name: Install browsers
+        run: playwright install chromium
+
+      - name: Run E2E tests
+        run: pytest tests/e2e/test_ui.py -v
