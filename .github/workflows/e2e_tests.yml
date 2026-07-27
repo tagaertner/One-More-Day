@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install playwright pytest-playwright
+        run: pip install playwright pytest-playwright boto3 requests
 
       - name: Install browsers
         run: playwright install chromium
