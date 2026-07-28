@@ -54,8 +54,12 @@ def login_form():
 def signup_form():
     email = st.text_input("Email", key="signup_email")
     password = st.text_input("Password", type="password", key="signup_pw")
-
+    st.caption("Password must be at least 8 characters.")
+    
     if st.button("Sign Up"):
+        if len(password) < 8:
+            st.error("Password must be at least 8 characters.")
+            return
         try:
             client.sign_up(
                 ClientId=CLIENT_ID,
