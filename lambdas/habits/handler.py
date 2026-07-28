@@ -39,13 +39,11 @@ ALLOWED_CATEGORIES = {
     "Finance"
 }
 
-
 def get_user_id(event):
     """
     Get authenticated user from Cognito token
     """
     return event["requestContext"]["authorizer"]["claims"]["sub"]
-
 
 def create_habit(event):
 
@@ -86,7 +84,6 @@ def create_habit(event):
 
 
     table.put_item(Item=item)
-
 
     return {
         "statusCode": 201,
