@@ -234,7 +234,7 @@ Resources:
   SESEmailIdentity:
     Type: AWS::SES::EmailIdentity
     Properties:
-      EmailIdentity: one-more-day-notifications@gmail.com
+      EmailIdentity: onemoredaynotifications@gmail.com
 
   # ─── EventBridge Rule ───
   # Aksana stretch goal — fires daily at 9am UTC to trigger habit reminders
