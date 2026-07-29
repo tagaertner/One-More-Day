@@ -225,7 +225,7 @@ __marimo__/
 
 # AWS SAM
 .aws-sam/
-samconfig.toml
+
 
 # Docker
 .docker/
