@@ -324,6 +324,7 @@ Resources:
             - Effect: Allow
               Action:
                 - cognito-idp:ListUsers
+                - cognito-idp:AdminGetUser
               Resource: !GetAtt UserPool.Arn
       Events:
         CreateHabit:
