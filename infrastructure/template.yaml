@@ -68,6 +68,8 @@ Resources:
   # Stores user information and verifies the password is correct
   UserPool:
     Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       UserPoolName: one-more-day-user
       AutoVerifiedAttributes: []
