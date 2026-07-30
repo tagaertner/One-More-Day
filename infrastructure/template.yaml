@@ -320,6 +320,11 @@ Resources:
         - SQSSendMessagePolicy:
             QueueName: !GetAtt HabitsDeadLetterQueue.QueueName
             # Allows Lambda to send failed events to the DLQ
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+              Resource: !GetAtt UserPool.Arn
       Events:
         CreateHabit:
           Type: Api
