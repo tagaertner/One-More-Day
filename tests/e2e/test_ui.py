@@ -29,7 +29,7 @@ def test_habits_page_loads(page: Page):
     frame.get_by_label("Password").first.fill(TEST_PASSWORD)
     frame.get_by_role("button", name="Log In").click()
     page.wait_for_timeout(4000)
-    expect(frame.get_by_text("Habit Management")).to_be_visible()
+    expect(frame.get_by_text("Welcome to One More Day!")).to_be_visible()
     
 def test_checkin_page_loads(page: Page):
     page.goto(STREAMLIT_URL)
