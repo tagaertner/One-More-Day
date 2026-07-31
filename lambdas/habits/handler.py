@@ -168,3 +168,4 @@ def decimal_to_int(obj):
         return int(obj)
     raise TypeError
 
+# trigger smoke test
