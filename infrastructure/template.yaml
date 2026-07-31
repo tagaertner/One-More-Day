@@ -53,7 +53,6 @@ Resources:
     Properties:
       QueueName: one-more-day-habits-dlq
       MessageRetentionPeriod: 1209600
-      # Retain failed messages for 14 days
       Tags:
         - Key: Project
           Value: one-more-day
@@ -328,6 +327,12 @@ Resources:
                 - cognito-idp:ListUsers
                 - cognito-idp:AdminGetUser
               Resource: !GetAtt UserPool.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
       Events:
         CreateHabit:
           Type: Api
@@ -413,6 +418,12 @@ Resources:
         - AWSXrayWriteOnlyAccess
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt CheckinTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
       Events:
         CompleteHabit:
           Type: Api
@@ -512,6 +523,12 @@ Resources:
               Action:
                 - bedrock:InvokeModel
               Resource: "*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
       Events:
         GetStats:
           Type: Api
@@ -797,9 +814,32 @@ Resources:
                   "${DynamoDBThrottleAlarm.Arn}"
                 ]
               }
-            }
+            },
+                {
+                "type": "metric",
+                "x": 0, "y": 24, "width": 24, "height": 6,
+                "properties": {
+                  "title": "One More Day App Usage: habits, checkin, analytics",
+                  "metrics":[
+                    ["OneMoreDay/Usage", "HabitCreated"],
+                    ["OneMoreDay/Usage", "HabitViewed"],
+                    ["OneMoreDay/Usage", "HabitDeleted"],
+                    ["OneMoreDay/Usage", "CheckinCompleted"],
+                    ["OneMoreDay/Usage", "DashboardViewed"]
+                ],
+                  "period": 300,
+                  "stat": "Sum",
+                  "region": "us-east-1"
+                }
+                }
           ]
         }
+  # ─── Future Usage Metrics ───
+  # To add a new metric to the usage widget above
+  # Suggested additions:
+  # - RemindersSent — once Aksana's SES reminder Lambda is complete
+  # - ReportExported — once Nilu's S3 export feature is complete
+  # - ActiveUsers — track distinct users per session
 
   DevTeamCloudWatchViewPolicy:
     Type: AWS::IAM::ManagedPolicy
