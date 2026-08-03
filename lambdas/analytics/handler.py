@@ -1,6 +1,4 @@
 import json
-# ─────────────────────────────────────────
-
 import os
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -20,6 +18,7 @@ dynamodb = boto3.resource(
     region_name="us-east-1",
     endpoint_url=os.environ.get("DYNAMODB_ENDPOINT")
 )
+cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')
 
 TABLE_NAME = "one-more-day-habits"
 table = dynamodb.Table(TABLE_NAME)
@@ -136,6 +135,14 @@ def get_stats(event):
     checkins = get_checkins_in_window(user_id)
     stats = compute_weekly_stats(habits, checkins)
 
+    try:
+        cloudwatch.put_metric_data(
+            Namespace='OneMoreDay/Usage',
+            MetricData=[{'MetricName': 'DashboardViewed', 'Value': 1, 'Unit': 'Count'}]
+        )
+    except Exception as e:
+        print(f"CloudWatch metric failed: {e}")
+
     return {
         "statusCode": 200,
         "body": json.dumps({"stats": stats}, default=_decimal_default)
@@ -164,4 +171,4 @@ def lambda_handler(event, context):
         return {
             "statusCode": 500,
             "body": json.dumps({"status": "error", "message": str(exc), "code": 500})
-        }# trigger e2e tests
+        }
