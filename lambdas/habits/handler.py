@@ -6,6 +6,7 @@ import boto3
 import os
 from boto3.dynamodb.conditions import Key
 from decimal import Decimal
+import logging
 # ─────────────────────────────────────────
 # To get the authenticated user's ID, use:
 #   user_id = event['requestContext']['authorizer']['claims']['sub']
@@ -18,12 +19,18 @@ from decimal import Decimal
 #       http_method = event['httpMethod']
 #       ...
 # ─────────────────────────────────────────
+# adding logging to help with debugging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 dynamodb = boto3.resource(
     "dynamodb",
     region_name="us-east-1",
     endpoint_url=os.environ.get("DYNAMODB_ENDPOINT")
 )
+ses = boto3.client("ses", region_name="us-east-1")
+cognito = boto3.client("cognito-idp", region_name="us-east-1")
+cloudwatch = boto3.client("cloudwatch", region_name="us-east-1")
 
 TABLE_NAME = "one-more-day-habits"
 
@@ -85,6 +92,9 @@ def create_habit(event):
 
     table.put_item(Item=item)
 
+    # adding cloudwatch metric for habit creation
+    record_metric("HabitCreated")
+
     return {
         "statusCode": 201,
         "body": json.dumps(item)
@@ -98,6 +108,8 @@ def list_habits(event):
             &
             Key("SK").begins_with("HABIT#")
     )
+    # Adding CloudWatch metric for habit listing
+    record_metric("HabitViewed")
 
     habits = [
         item for item in response["Items"]
@@ -132,6 +144,8 @@ def delete_habit(event):
         },
         ReturnValues="ALL_NEW"
     )
+    # adding cloudwatch metric for habit deletion
+    record_metric("HabitDeleted")
 
     return {
     "statusCode": 200,
@@ -143,8 +157,122 @@ def delete_habit(event):
         default=decimal_to_int
     )
 }
+# Lambda function to send daily reminders to users about their habits
+def send_daily_reminders():
+    USER_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
+    logger.info("Starting daily reminders")
+
+    # Scan DynamoDB for active habits
+    response = table.scan()
+    items = response.get("Items", [])
+
+    # Group habits by userId
+    users = {}
+
+    # Group habits by user
+    for item in items:
+        if (
+            item["SK"].startswith("HABIT#")
+            and item.get("active") is True
+        ):
+            user_id = item["userId"]
+
+            if user_id not in users:
+                users[user_id] = {
+                    "habits": []
+                }
+
+            users[user_id]["habits"].append(
+                item["habitName"]
+            )
+
+    logger.info(f"Found {len(users)} users with active habits")
+
+    # Get email from Cognito and send reminders
+    for user_id, user_data in users.items():
+
+        try:
+            # Query Cognito user by sub
+            response = cognito.admin_get_user(
+                UserPoolId=USER_POOL_ID,
+                Username=user_id
+            )
+
+            attributes = {
+                attr["Name"]: attr["Value"]
+                for attr in response["UserAttributes"]
+            }
+
+            email = attributes.get("email")
+
+            if not email:
+                logger.warning(
+                    f"No email found for user {user_id}"
+                )
+                continue
+        except Exception as e:
+            logger.error(f"Error fetching user {user_id} from Cognito: {e}")
+            continue
+        # Send email using SES
+        try:
+            body = (
+                "Good morning!\n\n"
+                "Here are your habits for today:\n\n"
+            )
+
+            for habit in user_data["habits"]:
+                body += f"- {habit}\n"
+
+            body += "\n Have a great day and keep your streak alive!"
+
+            logger.info(f"Sending reminder to {email}")
+
+            # Send email using SES
+            ses.send_email(
+                Source=os.environ["SENDER_EMAIL"],
+                Destination={
+                    "ToAddresses": [
+                        email
+                    ]
+                },
+                Message={
+                    "Subject": {
+                        "Data": "One More Day Reminder"
+                    },
+                    "Body": {
+                        "Text": {
+                            "Data": body
+                        }
+                    }
+                }
+            )
+            # adding cloudwatch metric for reminder sending
+            record_metric("RemindersSent")
+
+
+        except Exception as e:
+            logger.error(
+                f"Failed sending reminder "
+                f"for user {user_id}: {e}"
+            )
+
+
+    logger.info(
+        "Finished sending daily reminders"
+    )
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": "Reminder emails sent"
+        })
+    }
 
 def lambda_handler(event, context):
+
+    # Scheduled reminder
+    if event.get("source") == "aws.events":
+        return send_daily_reminders()
 
     method = event["httpMethod"]
 
@@ -163,6 +291,22 @@ def lambda_handler(event, context):
             "error": "Method not allowed"
         })
     }
+# Helper function to record CloudWatch metrics
+def record_metric(metric_name):
+    try:
+        cloudwatch.put_metric_data(
+            Namespace="OneMoreDay/Usage",
+            MetricData=[
+                {
+                    "MetricName": metric_name,
+                    "Value": 1,
+                    "Unit": "Count"
+                }
+            ]
+        )
+    except Exception as e:
+        logger.error(f"CloudWatch metric failed: {e}")
+
 def decimal_to_int(obj):
     if isinstance(obj, Decimal):
         return int(obj)

@@ -309,6 +309,7 @@ Resources:
       Environment:
         Variables:
           DYNAMODB_TABLE: !Ref HabitsTable
+          SENDER_EMAIL: onemoredaynotifications@gmail.com
 
       Policies:
         - DynamoDBCrudPolicy:

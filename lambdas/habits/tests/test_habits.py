@@ -41,7 +41,7 @@ def setup_table():
 
     return table
 
-
+# Test that creating a habit works and returns the correct response
 @mock_aws
 def test_create_habit():
 
@@ -84,7 +84,7 @@ def test_create_habit():
             "SK": body["SK"]
         }
     )
-
+# Test that creating a habit with an invalid category returns a 400 error
 @mock_aws
 def test_create_habit_invalid_category():
 
@@ -116,7 +116,7 @@ def test_create_habit_invalid_category():
 
     assert body["error"] == "Invalid category"
 
-
+# Test that the list_habits function returns only active habits for the authenticated user
 @mock_aws
 def test_list_habits():
 
@@ -152,7 +152,7 @@ def test_list_habits():
     assert len(habits) == 1
     assert habits[0]["habitName"] == "Read"
 
-
+# Test that deleted habits are not returned in the list
 @mock_aws
 def test_list_habits_ignores_deleted():
 
@@ -186,6 +186,7 @@ def test_list_habits_ignores_deleted():
 
     assert habits == []
 
+# Test that deleting a habit sets its active status to False
 @mock_aws
 def test_delete_habit():
 
@@ -229,6 +230,7 @@ def test_delete_habit():
 
     assert item["active"] is False
 
+# Test that the deleted timestamp is set when a habit is deleted
 @mock_aws
 def test_delete_sets_deleted_timestamp():
 
