@@ -8,7 +8,7 @@ table = dynamodb.Table('one-more-day-habits')
 
 # 60-day history window
 end_date = datetime.now()
-start_date = end_date - timedelta(days=30)
+start_date = end_date - timedelta(days=60)
 
 # ─── User profiles ───
 # Keys are real Cognito `sub` values — pulled via:
