@@ -29,20 +29,6 @@ Follows the same conventions as habits_page.py / checkin_page.py:
     token automatically — no manual headers, no API key)
 """
 
-
-
-
-        
-"""
-One More Day — Progress Dashboard page
-Owner: Nilu
-
-Follows the same conventions as habits_page.py / checkin_page.py:
-  - exposes a `show()` function, called from app.py after login
-  - uses the shared `login_page.call_api()` helper (handles the Cognito
-    token automatically — no manual headers, no API key)
-"""
-
 import streamlit as st
 import login_page
 
@@ -101,3 +87,15 @@ def show():
         )
     else:
         st.write("No active habits yet.")
+
+    st.divider()
+    if st.button("Export weekly report"):
+        with st.spinner("Generating your report..."):
+            export_response = login_page.call_api("/report/export", method="GET")
+
+        if export_response.status_code != 200:
+            st.error(f"Could not export report (status {export_response.status_code}). Try again shortly.")
+        else:
+            report_url = export_response.json().get("reportUrl")
+            st.success("Report exported.")
+            st.markdown(f"[Download report]({report_url})")
