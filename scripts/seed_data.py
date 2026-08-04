@@ -7,8 +7,8 @@ dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
 table = dynamodb.Table('one-more-day-habits')
 
 # 60-day history window
-start_date = datetime(2026, 7, 4)
-end_date = datetime(2026, 8, 4)
+end_date = datetime.now()
+start_date = end_date - timedelta(days=30)
 
 # ─── User profiles ───
 # Keys are real Cognito `sub` values — pulled via:
