@@ -1,6 +1,4 @@
 import json
-# ─────────────────────────────────────────
-
 import os
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -20,9 +18,13 @@ dynamodb = boto3.resource(
     region_name="us-east-1",
     endpoint_url=os.environ.get("DYNAMODB_ENDPOINT")
 )
+cloudwatch = boto3.client('cloudwatch', region_name='us-east-1')
+s3_client = boto3.client('s3', region_name='us-east-1')
 
 TABLE_NAME = "one-more-day-habits"
 table = dynamodb.Table(TABLE_NAME)
+REPORT_BUCKET = "one-more-day-reports"
+PRESIGNED_URL_EXPIRY_SECONDS = 3600
 
 WEEK_WINDOW_DAYS = 7  # rolling 7 days ending today
 
@@ -136,9 +138,65 @@ def get_stats(event):
     checkins = get_checkins_in_window(user_id)
     stats = compute_weekly_stats(habits, checkins)
 
+    try:
+        cloudwatch.put_metric_data(
+            Namespace='OneMoreDay/Usage',
+            MetricData=[{'MetricName': 'DashboardViewed', 'Value': 1, 'Unit': 'Count'}]
+        )
+    except Exception as e:
+        print(f"CloudWatch metric failed: {e}")
+
     return {
         "statusCode": 200,
         "body": json.dumps({"stats": stats}, default=_decimal_default)
+    }
+
+
+def export_report_to_s3(user_id, stats):
+    """Write the weekly report as JSON to S3 and return a presigned GET URL."""
+    import uuid
+
+    report = {
+        "userId": user_id,
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "report": stats,
+    }
+    key = f"reports/{user_id}/{uuid.uuid4()}.json"
+
+    s3_client.put_object(
+        Bucket=REPORT_BUCKET,
+        Key=key,
+        Body=json.dumps(report, default=_decimal_default),
+        ContentType="application/json",
+    )
+
+    url = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": REPORT_BUCKET, "Key": key},
+        ExpiresIn=PRESIGNED_URL_EXPIRY_SECONDS,
+    )
+    return url
+
+
+def get_report_export(event):
+    user_id = get_user_id(event)
+    habits = get_active_habits(user_id)
+    checkins = get_checkins_in_window(user_id)
+    stats = compute_weekly_stats(habits, checkins)
+
+    report_url = export_report_to_s3(user_id, stats)
+
+    try:
+        cloudwatch.put_metric_data(
+            Namespace='OneMoreDay/Usage',
+            MetricData=[{'MetricName': 'ReportExported', 'Value': 1, 'Unit': 'Count'}]
+        )
+    except Exception as e:
+        print(f"CloudWatch metric failed: {e}")
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"userId": user_id, "reportUrl": report_url}, default=_decimal_default)
     }
 
 
@@ -156,6 +214,9 @@ def lambda_handler(event, context):
         if http_method == "GET" and path.endswith("/stats"):
             return get_stats(event)
 
+        if http_method == "GET" and path.endswith("/report/export"):
+            return get_report_export(event)
+
         return {
             "statusCode": 404,
             "body": json.dumps({"status": "error", "message": "route not found", "code": 404})
@@ -164,4 +225,4 @@ def lambda_handler(event, context):
         return {
             "statusCode": 500,
             "body": json.dumps({"status": "error", "message": str(exc), "code": 500})
-        }# trigger e2e tests
+        }

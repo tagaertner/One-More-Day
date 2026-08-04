@@ -310,5 +310,8 @@ def record_metric(metric_name):
 def decimal_to_int(obj):
     if isinstance(obj, Decimal):
         return int(obj)
-    raise TypeError# trigger e2e tests
-# 2nd trigger e2e tests
+    raise TypeError
+
+# trigger smoke test
+# trigger smoke test 2
+# trigger smoke test 3

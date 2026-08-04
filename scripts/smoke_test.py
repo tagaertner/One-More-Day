@@ -26,7 +26,22 @@ def test_habits(headers):
     r = requests.get(f"{BASE_URL}/habits", headers=headers)
     assert r.status_code == 200, f"GET /habits failed: {r.status_code}"
     print("✅ GET /habits — ok")
-    
+
+def test_checkin(headers):
+    r = requests.get(f"{BASE_URL}/habits/test-id/history", headers=headers)
+    assert r.status_code in [200, 404], f"GET /history failed: {r.status_code}"
+    print("✅ GET /habits/id/history — ok")
+
+def test_analytics(headers):
+    r = requests.get(f"{BASE_URL}/stats", headers=headers)
+    assert r.status_code == 200, f"GET /stats failed: {r.status_code}"
+    print("✅ GET /stats — ok")
+
+def test_auth_required(headers):
+    r = requests.get(f"{BASE_URL}/habits")
+    assert r.status_code == 401, f"Expected 401 without token, got: {r.status_code}"
+    print("✅ Auth required — unauthenticated request correctly rejected")
+
 if __name__ == "__main__":
     print("Running smoke tests...")
     try:
@@ -34,6 +49,9 @@ if __name__ == "__main__":
         headers = {"Authorization": f"Bearer {token}"}
 
         test_habits(headers)
+        test_checkin(headers)
+        test_analytics(headers)
+        test_auth_required(headers)
 
         print("\n✅ All smoke tests passed")
         sys.exit(0)
