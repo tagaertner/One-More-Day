@@ -228,6 +228,7 @@ def send_daily_reminders():
             logger.info(f"Sending reminder to {email}")
 
             # Send email using SES
+            logger.info(f"Sending reminder from {os.environ['SENDER_EMAIL']} to {email}")
             ses.send_email(
                 Source=os.environ["SENDER_EMAIL"],
                 Destination={
