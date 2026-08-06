@@ -157,10 +157,37 @@ def delete_habit(event):
         default=decimal_to_int
     )
 }
+
+# Helper function to check if email is verified in SES sandbox
+def is_email_verified(email):
+    try:
+        response = ses.get_identity_verification_attributes(
+            Identities=[email]
+        )
+
+        status = (
+            response
+            .get("VerificationAttributes", {})
+            .get(email, {})
+            .get("VerificationStatus")
+        )
+
+        return status == "Success"
+
+    except Exception as e:
+        logger.error(
+            f"Error checking SES verification for {email}: {e}"
+        )
+        return False
+
 # Lambda function to send daily reminders to users about their habits
 def send_daily_reminders():
     USER_POOL_ID = os.environ["COGNITO_USER_POOL_ID"]
     logger.info("Starting daily reminders")
+
+    sent_count = 0
+    skipped_count = 0
+    failed_count = 0
 
     # Scan DynamoDB for active habits
     response = table.scan()
@@ -206,13 +233,20 @@ def send_daily_reminders():
             email = attributes.get("email")
 
             if not email:
-                logger.warning(
-                    f"No email found for user {user_id}"
-                )
+                logger.warning(f"No email found for user {user_id}")
+                failed_count += 1
                 continue
+
         except Exception as e:
             logger.error(f"Error fetching user {user_id} from Cognito: {e}")
+            failed_count += 1
             continue
+        if not is_email_verified(email):
+            logger.info(f"Skipping unverified email: {email}")
+            skipped_count += 1
+            record_metric("RemindersSkipped")
+            continue
+        
         # Send email using SES
         try:
             body = (
@@ -249,27 +283,38 @@ def send_daily_reminders():
             logger.info(f"SES request source: {request['Source']}")
 
             ses.send_email(**request)
+            sent_count += 1
             # adding cloudwatch metric for reminder sending
             record_metric("RemindersSent")
+            logger.info(
+                f"Reminder sent successfully to {email}"
+            )
 
 
         except Exception as e:
+            failed_count += 1
             logger.error(
                 f"Failed sending reminder "
                 f"for user {user_id}: {e}"
             )
 
-
     logger.info(
-        "Finished sending daily reminders"
+        "Finished sending daily reminders. "
+        f"Sent: {sent_count}, "
+        f"Skipped: {skipped_count}, "
+        f"Failed: {failed_count}"
     )
 
     return {
         "statusCode": 200,
         "body": json.dumps({
-            "message": "Reminder emails sent"
+            "message": "Reminder emails processed",
+            "sent": sent_count,
+            "skipped": skipped_count,
+            "failed": failed_count
         })
     }
+
 
 def lambda_handler(event, context):
 

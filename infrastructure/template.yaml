@@ -247,7 +247,8 @@ Resources:
       Name: one-more-day-daily-reminder
       Description: Fires daily at 9am UTC to trigger habit reminders
       ScheduleExpression: "cron(0 9 * * ? *)"
-      State: DISABLED
+      ScheduleExpressionTimezone: "America/New_York"
+      State: ENABLED
       Targets:
         - Arn: !GetAtt HabitsFunction.Arn
           Id: HabitsFunctionTarget
