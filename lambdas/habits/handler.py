@@ -228,15 +228,14 @@ def send_daily_reminders():
             logger.info(f"Sending reminder to {email}")
 
             # Send email using SES
-            logger.info(f"Sending reminder from {os.environ['SENDER_EMAIL']} to {email}")
-            ses.send_email(
-                Source=os.environ["SENDER_EMAIL"],
-                Destination={
+            request = {
+                "Source": "onemoredaynotifications@gmail.com",
+                "Destination": {
                     "ToAddresses": [
                         email
                     ]
                 },
-                Message={
+                "Message": {
                     "Subject": {
                         "Data": "One More Day Reminder"
                     },
@@ -246,7 +245,10 @@ def send_daily_reminders():
                         }
                     }
                 }
-            )
+            }
+            logger.info(f"SES request source: {request['Source']}")
+
+            ses.send_email(**request)
             # adding cloudwatch metric for reminder sending
             record_metric("RemindersSent")
 
