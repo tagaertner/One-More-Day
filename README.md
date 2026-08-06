@@ -87,19 +87,6 @@ allowing problems to be identified before users report them.
 
 ---
 
-# Team Contributions
-
-**Tami — Infrastructure**
-SAM template, CI/CD pipeline, Cognito auth, CloudWatch observability, integration tests, Playwright e2e tests
-
-**Aksana — Habit Management + Check-in UI**
-Habits Lambda, EventBridge reminders, SES email notifications, check-in Streamlit page
-
-**Nilu — Analytics + Check-in**
-Analytics Lambda, S3 reports, weekly stats dashboard, check-in feature
-
----
-
 # Key Features
 
 ### Habit Management
