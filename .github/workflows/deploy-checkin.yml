@@ -5,6 +5,7 @@ on:
     branches: [dev]
     paths:
       - "lambdas/checkin/**/*.py"
+      - "tests/test_checkin_integration.py"
   workflow_dispatch:
 jobs:
   deploy:

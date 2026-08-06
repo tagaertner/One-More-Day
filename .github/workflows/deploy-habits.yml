@@ -5,6 +5,8 @@ on:
     branches: [dev]
     paths:
       - "lambdas/habits/**/*.py"
+      - "tests/test_habits_integration.py"
+
   workflow_dispatch:
 
 jobs:
