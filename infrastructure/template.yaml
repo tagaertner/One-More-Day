@@ -317,8 +317,15 @@ Resources:
             TableName: !Sub "${HabitsTable}"
         - CloudWatchLogsFullAccess
         - AWSXrayWriteOnlyAccess
-        - SESCrudPolicy:
-            IdentityName: !Ref SESEmailIdentity
+        #- SESCrudPolicy:
+        #    IdentityName: !Ref SESEmailIdentity
+        # Changing for testing — SESCrudPolicy is too broad, only allows sending from verified identity
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
         - SQSSendMessagePolicy:
             QueueName: !GetAtt HabitsDeadLetterQueue.QueueName
             # Allows Lambda to send failed events to the DLQ
