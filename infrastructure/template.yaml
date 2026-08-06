@@ -326,6 +326,7 @@ Resources:
               Action:
                 - ses:SendEmail
                 - ses:SendRawEmail
+                - ses:GetIdentityVerificationAttributes
               Resource: "*"
         - SQSSendMessagePolicy:
             QueueName: !GetAtt HabitsDeadLetterQueue.QueueName
