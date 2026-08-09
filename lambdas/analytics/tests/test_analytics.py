@@ -1,4 +1,3 @@
-# ─── Nilu — Analytics Tests ───
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -27,11 +26,12 @@ def create_fake_table(dynamodb):
     )
 
 
-def _fake_event(path="/stats"):
+def _fake_event(path="/stats", query_params=None):
     """Simulates the event shape API Gateway sends after Cognito auth."""
     return {
         "httpMethod": "GET",
         "path": path,
+        "queryStringParameters": query_params,
         "requestContext": {
             "authorizer": {
                 "claims": {"sub": USER_ID}
@@ -219,3 +219,44 @@ def test_export_report():
     objects = s3.list_objects_v2(Bucket=REPORT_BUCKET, Prefix=f"reports/{USER_ID}/")
     assert objects["KeyCount"] == 1
     print("✅ test_export_report passed")
+
+
+@mock_aws
+def test_export_report_csv():
+    """GET /report/export?format=csv writes a CSV report to S3 with a .csv key"""
+    dynamodb = boto3.resource("dynamodb", region_name=REGION)
+    table = create_fake_table(dynamodb)
+
+    s3 = boto3.client("s3", region_name=REGION)
+    s3.create_bucket(Bucket=REPORT_BUCKET)
+
+    table.put_item(Item={
+        "userId": USER_ID,
+        "SK": "HABIT#h1",
+        "habitId": "h1",
+        "habitName": "Drink water",
+        "category": "Health",
+        "active": True,
+        "streakCount": 2,
+        "longestStreak": 5,
+    })
+
+    from handler import lambda_handler
+    response = lambda_handler(
+        _fake_event(path="/report/export", query_params={"format": "csv"}), None
+    )
+
+    assert response["statusCode"] == 200
+    body = json.loads(response["body"])
+    assert body["reportUrl"].startswith("https://")
+
+    objects = s3.list_objects_v2(Bucket=REPORT_BUCKET, Prefix=f"reports/{USER_ID}/")
+    keys = [obj["Key"] for obj in objects["Contents"]]
+    assert any(k.endswith(".csv") for k in keys)
+
+    # Confirm the actual CSV content looks right
+    csv_key = next(k for k in keys if k.endswith(".csv"))
+    csv_body = s3.get_object(Bucket=REPORT_BUCKET, Key=csv_key)["Body"].read().decode()
+    assert "Drink water" in csv_body
+    assert "Health" in csv_body
+    print("✅ test_export_report_csv passed")
