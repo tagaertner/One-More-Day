@@ -1,5 +1,3 @@
-import streamlit as st
-
 """
 One More Day — Progress Dashboard page
 Owner: Nilu
@@ -70,9 +68,15 @@ def show():
         st.write("No active habits yet.")
 
     st.divider()
+    export_format = st.radio("Report format", ["JSON", "CSV"], horizontal=True)
+
     if st.button("Export weekly report"):
         with st.spinner("Generating your report..."):
-            export_response = login_page.call_api("/report/export", method="GET")
+            export_response = login_page.call_api(
+                "/report/export",
+                method="GET",
+                params={"format": export_format.lower()}
+            )
 
         if export_response.status_code != 200:
             st.error(f"Could not export report (status {export_response.status_code}). Try again shortly.")
