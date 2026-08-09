@@ -1,132 +1,187 @@
-import streamlit as st
-import login_page
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
-# ─────────────────────────────────────────
-# AUTH NOTE — Cognito is live, read before building this page
-# ─────────────────────────────────────────
-# When you call the API from this page, use login_page.call_api()
-# instead of calling requests directly with an x-api-key header.
-# That helper automatically attaches your real login token, and
-# silently refreshes it if it has expired — you don't need to
-# handle auth yourself.
-#
-# Example:
-#   import login_page
-#   response = login_page.call_api("/habits/{id}/complete", method="POST", json={"notes": "..."})
-#
-# The userId no longer comes from anything you send — it's already
-# pulled from the verified token on the Lambda side.
-# ─────────────────────────────────────────
+import boto3
+from boto3.dynamodb.conditions import Key
+
+dynamodb = boto3.resource(
+    "dynamodb",
+    region_name="us-east-1",
+    endpoint_url=os.environ.get("DYNAMODB_ENDPOINT")
+)
+sns = boto3.client("sns", region_name="us-east-1")
+cloudwatch = boto3.client("cloudwatch", region_name="us-east-1")
+
+TABLE_NAME = "one-more-day-habits"
+table = dynamodb.Table(TABLE_NAME)
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")
 
 
-def show():
-    st.header("Daily check-in")
-    st.divider()
+def get_user_id(event):
+    """Get authenticated user from Cognito token"""
+    return event["requestContext"]["authorizer"]["claims"]["sub"]
 
-    # Get all habits
-    response = login_page.call_api("/habits", method="GET")
 
-    if response.status_code != 200:
-        st.error("Unable to load habits.")
-        return
+def complete_habit(event):
+    user_id = get_user_id(event)
+    habit_id = event["pathParameters"]["id"]
 
-    habits = response.json()
+    body = json.loads(event.get("body") or "{}")
+    note = body.get("notes")
 
-    active_habits = [
-        habit for habit in habits
-        if habit.get("active", True)
-    ]
+    today = datetime.now(timezone.utc).date()
+    today_str = today.strftime("%Y-%m-%d")
 
-    if not active_habits:
-        st.info("You don't have any active habits yet.")
-        return
+    # 1. Get the parent HABIT item to check lastCompletedDate / current streak
+    habit_response = table.get_item(
+        Key={"userId": user_id, "SK": f"HABIT#{habit_id}"}
+    )
+    habit = habit_response.get("Item")
 
-    # Build dropdown
-    options = {
-        f"{habit['habitName']} ({habit['category']})": habit
-        for habit in active_habits
+    if not habit or not habit.get("active", True):
+        return {
+            "statusCode": 404,
+            "body": json.dumps({"status": "error", "message": "habit not found", "code": 404})
+        }
+
+    # 2. Conditional write — DynamoDB rejects a duplicate check-in for today
+    try:
+        table.put_item(
+            Item={
+                "userId": user_id,
+                "SK": f"CHECKIN#{habit_id}#{today_str}",
+                "habitId": habit_id,
+                "date": today_str,
+                "completed": True,
+                "notes": note,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            ConditionExpression="attribute_not_exists(SK)"
+        )
+    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({
+                "status": "error",
+                "message": "habit already completed today",
+                "code": 400
+            })
+        }
+
+    # 3. Streak logic
+    last_completed = habit.get("lastCompletedDate")
+    current_streak = int(habit.get("streakCount", 0))
+    longest_streak = int(habit.get("longestStreak", 0))
+
+    yesterday_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    if last_completed == yesterday_str:
+        new_streak = current_streak + 1
+    else:
+        new_streak = 1
+
+    new_longest = max(new_streak, longest_streak)
+
+    table.update_item(
+        Key={"userId": user_id, "SK": f"HABIT#{habit_id}"},
+        UpdateExpression="""
+            SET streakCount = :streak,
+                longestStreak = :longest,
+                lastCompletedDate = :today
+        """,
+        ExpressionAttributeValues={
+            ":streak": new_streak,
+            ":longest": new_longest,
+            ":today": today_str,
+        }
+    )
+
+    # 4. SNS confirmation — event-driven, best-effort
+    try:
+        if SNS_TOPIC_ARN:
+            sns.publish(
+                TopicArn=SNS_TOPIC_ARN,
+                Subject="Habit completed",
+                Message=json.dumps({
+                    "userId": user_id,
+                    "habitId": habit_id,
+                    "date": today_str,
+                    "streakCount": new_streak,
+                })
+            )
+    except Exception as e:
+        print(f"SNS publish failed: {e}")
+
+    # 5. CloudWatch usage metric — best-effort, never blocks the response
+    try:
+        cloudwatch.put_metric_data(
+            Namespace="OneMoreDay/Usage",
+            MetricData=[{"MetricName": "CheckinCompleted", "Value": 1, "Unit": "Count"}]
+        )
+    except Exception as e:
+        print(f"CloudWatch metric failed: {e}")
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": "habit marked complete",
+            "habitId": habit_id,
+            "date": today_str,
+            "streakCount": new_streak,
+            "longestStreak": new_longest,
+        }, default=_decimal_default)
     }
 
-    st.markdown(
-    "<p style='font-size:24px; font-weight:600;'>Select your habit:</p>",
-    unsafe_allow_html=True)
 
-    #selected = st.selectbox("", list(options.keys()))
-    selected = st.selectbox(
-    "Choose today's habit",
-    list(options.keys()),
-    label_visibility="collapsed")
+def get_habit_history(event):
+    """GET /habits/{id}/history — view recent completion history (if time allows)"""
+    user_id = get_user_id(event)
+    habit_id = event["pathParameters"]["id"]
 
-    habit = options[selected]
-
-    st.subheader(habit["habitName"])
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.write(f"Current streak: {habit.get('streakCount', 0)}")
-
-    with col2:
-        st.write(f"Longest streak: {habit.get('longestStreak', 0)}")
-
-    notes = st.text_area("Notes (optional)")
-
-    if st.button("Complete Today"):
-
-        complete_response = login_page.call_api(
-            f"/habits/{habit['habitId']}/complete",
-            method="POST",
-            json={
-                "notes": notes
-            }
+    response = table.query(
+        KeyConditionExpression=(
+            Key("userId").eq(user_id) & Key("SK").begins_with(f"CHECKIN#{habit_id}#")
         )
+    )
+    items = response.get("Items", [])
+    items.sort(key=lambda i: i.get("date", ""), reverse=True)
 
-        if complete_response.status_code == 200:
+    history = [
+        {"date": i.get("date"), "notes": i.get("notes")}
+        for i in items
+    ]
 
-            data = complete_response.json()
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"habitId": habit_id, "history": history}, default=_decimal_default)
+    }
 
-            st.success("Habit completed!")
 
-            st.write(f"Current streak: {data['streakCount']}")
+def _decimal_default(obj):
+    if isinstance(obj, Decimal):
+        return int(obj)
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-            st.write(f"Longest streak: {data['longestStreak']}")
 
-            st.rerun()
+def lambda_handler(event, context):
+    method = event.get("httpMethod")
+    path = event.get("path", "")
 
-        else:
-            error = complete_response.json()
-            st.error(
-                error.get(
-                    "message",
-                    "Unable to complete habit."
-                )
-            )
+    try:
+        if method == "POST" and path.endswith("/complete"):
+            return complete_habit(event)
 
-    st.divider()
+        if method == "GET" and path.endswith("/history"):
+            return get_habit_history(event)
 
-    if st.button("View History"):
-
-        history_response = login_page.call_api(
-            f"/habits/{habit['habitId']}/history",
-            method="GET"
-        )
-
-        if history_response.status_code == 200:
-
-            history = history_response.json().get("history", [])
-
-            if history:
-                st.subheader("Recent Check-ins")
-
-                for checkin in history:
-
-                    st.write(f"{checkin['date']}")
-
-                    if checkin.get("notes"):
-                        st.caption(checkin["notes"])
-
-            else:
-                st.info("No check-in history yet.")
-
-        else:
-            st.error("Unable to load history.")
+        return {
+            "statusCode": 405,
+            "body": json.dumps({"status": "error", "message": "method not allowed", "code": 405})
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"status": "error", "message": str(exc), "code": 500})
+        }# trigger integration test

@@ -7,11 +7,6 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from decimal import Decimal
 
-# ─────────────────────────────────────────
-# AUTH NOTE — Cognito is live
-#   user_id = event['requestContext']['authorizer']['claims']['sub']
-#   Do NOT read userId from the request body — it comes from the verified token.
-# ─────────────────────────────────────────
 
 dynamodb = boto3.resource(
     "dynamodb",

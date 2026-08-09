@@ -7,18 +7,7 @@ import os
 from boto3.dynamodb.conditions import Key
 from decimal import Decimal
 import logging
-# ─────────────────────────────────────────
-# To get the authenticated user's ID, use:
-#   user_id = event['requestContext']['authorizer']['claims']['sub']
-#
-# Do NOT read userId from the request body — it comes from the verified token.
-#
-# Example:
-#   def lambda_handler(event, context):
-#       user_id = event['requestContext']['authorizer']['claims']['sub']
-#       http_method = event['httpMethod']
-#       ...
-# ─────────────────────────────────────────
+
 # adding logging to help with debugging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)

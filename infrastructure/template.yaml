@@ -213,7 +213,7 @@ Resources:
           Value: sam
 
   # ─── SNS Topic ───
-  # Melody's Lambda publishes here on every successful check-in (MVP)
+  # Nilus's Lambda publishes here on every successful check-in (MVP)
   CheckinTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -246,8 +246,8 @@ Resources:
     Properties:
       Name: one-more-day-daily-reminder
       Description: Fires daily at 9am UTC to trigger habit reminders
-      ScheduleExpression: "cron(0 9 * * ? *)"
-      ScheduleExpressionTimezone: "America/New_York"
+      ScheduleExpression: "cron(0 13 * * ? *)"
+      #ScheduleExpressionTimezone: "America/New_York"
       State: ENABLED
       Targets:
         - Arn: !GetAtt HabitsFunction.Arn
@@ -403,7 +403,7 @@ Resources:
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
 
-  # ─── Melody — Daily Check-In (MVP) ───
+  # ─── Nilu's— Daily Check-In (MVP) ───
   # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
   # GET /habits/{id}/history — completion history (if time allows)
   # Unique AWS service: SNS
@@ -702,7 +702,7 @@ Resources:
         - Key: Owner
           Value: tami
         - Key: FeatureOwner
-          Value: melody
+          Value: nilu
         - Key: ManagedBy
           Value: sam
 
@@ -871,7 +871,6 @@ Resources:
             Resource: "*"
       Users:
         - aksana-dev
-        - melody-dev
         - nilu-dev
 
 # ─────────────────────────────────────────
