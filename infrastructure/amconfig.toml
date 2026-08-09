@@ -1,0 +1,13 @@
+version = 0.1
+
+["samconfig.toml".deploy.parameters]
+stack_name = "one-more-day"
+resolve_s3 = true
+s3_prefix = "one-more-day"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+image_repositories = []
+
+["samconfig.toml".global.parameters]
+region = "us-east-1"

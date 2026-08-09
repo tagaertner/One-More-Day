@@ -1,0 +1,900 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: One More Day — Serverless backend infrastructure
+
+Globals:
+  Function:
+    Tags:
+      Project: one-more-day
+      Environment: prod
+      Owner: tami
+      ManagedBy: sam
+
+Resources:
+  # ─────────────────────────────────────────
+  # SHARED INFRASTRUCTURE
+  # ─────────────────────────────────────────
+
+  # ─── DynamoDB Table ───
+  # Shared by all four Lambdas
+  # PK: userId, SK: HABIT#id or CHECKIN#habitId#date or USER#profile
+  HabitsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: one-more-day-habits
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  # ─── Dead Letter Queue ───
+  # Captures failed async invocations from EventBridge (Aksana's stretch goal)
+  # Without this, failed reminder events would be silently dropped after retries
+  HabitsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: one-more-day-habits-dlq
+      MessageRetentionPeriod: 1209600
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  # ─── Cognito User Pool ───
+  # Stores user information and verifies the password is correct
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UserPoolName: one-more-day-user
+      AutoVerifiedAttributes: []
+      # Empty = no forced email verification - Path A
+      # Path B later: change to AutoVerificationAttributs: [email]
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+      UserPoolTags:
+        Project: one-more-day
+        Environment: prod
+        Owner: tami
+        ManagedBy: sam
+
+  # ─── Cognito User Pool Client  ───
+  # Permission/configuration records what says which apps are allowed to talk to the UserPool
+  # 7 days of total inactivity: RefreshToken dies, nothing left to silently replace
+  # Every 60 min: IdToken dies -> silently replace -> user sees nothing.
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: one-more-day-app-client
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
+      RefreshTokenValidity: 7
+      TokenValidityUnits:
+        RefreshToken: days
+
+  # ─── API Gateway ───
+  # Routes all four services through one endpoint
+  # Base URL: https://xxxxxxxxxx.execute-api.us-east-1.amazonaws.com/prod
+  # Cognito auth required — Authorization: Bearer <token> on every request
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: one-more-day-api
+      StageName: prod
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt UserPool.Arn
+        DefaultAuthorizer: CognitoAuthorizer
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key'"
+        AllowOrigin: "'*'"
+      Tags:
+        Project: one-more-day
+        Environment: prod
+        Owner: tami
+        ManagedBy: sam
+
+  # ─── API Gateway Error Alarms ───
+  ApiGateway4xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-api-4xx-errors
+      AlarmDescription: API Gateway returning high 4xx errors — possible auth or request issues
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: one-more-day-api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  ApiGateway5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-api-5xx-errors
+      AlarmDescription: API Gateway returning 5xx errors — Lambda is crashing
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Dimensions:
+        - Name: ApiName
+          Value: one-more-day-api
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      # Zero tolerance — even one 5xx is urgent
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── S3 Buckets ───
+  # ReportsBucket — Nilu's Lambda writes weekly report JSON here (MVP)
+  # LogsBucket — habit completion logs for Athena queries (Nilu stretch goal)
+  ReportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: one-more-day-reports
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldReports
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  LogsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: one-more-day-habit-logs
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  # ─── SNS Topic ───
+  # Nilus's Lambda publishes here on every successful check-in (MVP)
+  CheckinTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: one-more-day-checkin-notifications
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  # ─── SES Email Identity ───
+  # Aksana stretch goal — daily reminders and weekly summary emails
+  # After deploy: go to SES console and verify this email address
+  # Change this to whatever email address you want to send from
+  SESEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: onemoredaynotifications@gmail.com
+
+  # ─── EventBridge Rule ───
+  # Aksana stretch goal — fires daily at 9am UTC to trigger habit reminders
+  # Set to DISABLED so it does not fire during MVP development
+  # Aksana enables it in the AWS console when she is ready to test
+  DailyReminderRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: one-more-day-daily-reminder
+      Description: Fires daily at 9am UTC to trigger habit reminders
+      ScheduleExpression: "cron(0 13 * * ? *)"
+      #ScheduleExpressionTimezone: "America/New_York"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt HabitsFunction.Arn
+          Id: HabitsFunctionTarget
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: ManagedBy
+          Value: sam
+
+  # Permission for EventBridge to invoke Aksana's Habits Lambda
+  DailyReminderPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref HabitsFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyReminderRule.Arn
+
+  # ─── Athena Workgroup ───
+  # Nilu stretch goal — runs pattern queries against S3 habit logs
+  # No Glue required — schema defined directly in Athena via DDL
+  # Cost: $5 per TB scanned — essentially free at capstone scale
+  AthenaWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: one-more-day-workgroup
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${LogsBucket}/athena-results/"
+        EnforceWorkGroupConfiguration: false
+
+  # ─────────────────────────────────────────
+  # LAMBDA FUNCTIONS
+  # ─────────────────────────────────────────
+
+  # ─── Aksana — Habit Management (MVP) ───
+  # POST /habits — create a habit
+  # GET /habits — list all active habits
+  # DELETE /habits/{id} — soft delete
+  # Stretch: EventBridge + SES daily reminders and weekly summary emails
+  HabitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-habits
+      CodeUri: ../lambdas/habits/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Tracing: Active
+      Timeout: 30
+      MemorySize: 128
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt HabitsDeadLetterQueue.Arn
+        # Failed async invocations land here instead of being silently dropped
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+          SENDER_EMAIL: onemoredaynotifications@gmail.com
+
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
+        #- SESCrudPolicy:
+        #    IdentityName: !Ref SESEmailIdentity
+        # Changing for testing — SESCrudPolicy is too broad, only allows sending from verified identity
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+                - ses:GetIdentityVerificationAttributes
+              Resource: "*"
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt HabitsDeadLetterQueue.QueueName
+            # Allows Lambda to send failed events to the DLQ
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:AdminGetUser
+              Resource: !GetAtt UserPool.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
+      Events:
+        CreateHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits
+            Method: POST
+        ListHabits:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits
+            Method: GET
+        DeleteHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}
+            Method: DELETE
+
+  # ─── Lambda Error Alarms ───
+  # Fires if a Lambda errors 3+ times in 5 minutes — infrastructure may be degraded
+  HabitsLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-habits-errors
+      AlarmDescription: Habits Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── CloudWatch Duration Alarms ───
+  # Warns if a Lambda is running close to its 30s timeout — may be hanging
+  HabitsLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-habits-duration
+      AlarmDescription: Habits Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Maximum
+      # Watch the maximum duration not the average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      # 25000 milliseconds = 25 seconds — 5 seconds before the 30s timeout
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── Nilu's— Daily Check-In (MVP) ───
+  # POST /habits/{id}/complete — mark habit done, update streak, publish SNS
+  # GET /habits/{id}/history — completion history (if time allows)
+  # Unique AWS service: SNS
+  CheckinFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-checkin
+      CodeUri: ../lambdas/checkin/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Tracing: Active
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+          SNS_TOPIC_ARN: !Ref CheckinTopic
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt CheckinTopic.TopicName
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
+      Events:
+        CompleteHabit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/complete
+            Method: POST
+        GetHistory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/history
+            Method: GET
+
+  # ─── Lambda Error Alarms ───
+  CheckinLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-errors
+      AlarmDescription: Checkin Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── CloudWatch Duration Alarms ───
+  CheckinLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-duration
+      AlarmDescription: Checkin Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── Nilu — Analytics + Dashboard (MVP) ───
+  # GET /stats — weekly summary
+  # GET /report/export — generate S3 report, return presigned URL
+  # Unique AWS service: S3
+  # Stretch: Athena pattern queries, Bedrock summaries
+  AnalyticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: one-more-day-analytics
+      CodeUri: ../lambdas/analytics/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Tracing: Active
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref HabitsTable
+          S3_BUCKET_REPORTS: !Ref ReportsBucket
+          S3_BUCKET_LOGS: !Ref LogsBucket
+          ATHENA_WORKGROUP: one-more-day-workgroup
+          ATHENA_OUTPUT: !Sub "s3://${LogsBucket}/athena-results/"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Sub "${HabitsTable}"
+        - CloudWatchLogsFullAccess
+        - AWSXrayWriteOnlyAccess
+        - S3CrudPolicy:
+            BucketName: !Ref ReportsBucket
+        - S3CrudPolicy:
+            BucketName: !Ref LogsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - athena:StartQueryExecution
+                - athena:GetQueryExecution
+                - athena:GetQueryResults
+                - athena:StopQueryExecution
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - glue:GetDatabase
+                - glue:GetTable
+                - glue:GetPartitions
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: "*"
+
+      Events:
+        GetStats:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /stats
+            Method: GET
+        GetStreak:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /habits/{id}/streak
+            Method: GET
+        ExportReport:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /report/export
+            Method: GET
+
+  # ─── Lambda Error Alarms ───
+  AnalyticsLambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-errors
+      AlarmDescription: Analytics Lambda erroring — infrastructure may be degraded
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── CloudWatch Duration Alarms ───
+  AnalyticsLambdaDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-duration
+      AlarmDescription: Analytics Lambda running close to timeout — may be hanging
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 25000
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─── CloudWatch Throttle Alarms — per function ───
+  HabitsLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-habits-throttles
+      AlarmDescription: Habits Lambda being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HabitsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  CheckinLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-checkin-throttles
+      AlarmDescription: Checkin Lambda being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref CheckinFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  AnalyticsLambdaThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-analytics-throttles
+      AlarmDescription: Analytics Lambda being throttled — hitting concurrency limit
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AnalyticsFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  DynamoDBThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: one-more-day-dynamodb-throttles
+      AlarmDescription: DynamoDB throttling requests — reduce concurrent calls
+      MetricName: ThrottledRequests
+      Namespace: AWS/DynamoDB
+      Dimensions:
+        - Name: TableName
+          Value: !Ref HabitsTable
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ─────────────────────────────────────────
+  # CLOUDWATCH LOG GROUPS
+  # ─────────────────────────────────────────
+  # ─── Log Groups ───
+  # One log group per Lambda function
+  # Logs are retained for 30 days to keep costs low
+  # All four Lambda invocations are logged here automatically
+
+  HabitsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-habits
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: aksana
+        - Key: ManagedBy
+          Value: sam
+
+  CheckinLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-checkin
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: nilu
+        - Key: ManagedBy
+          Value: sam
+
+  AnalyticsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/one-more-day-analytics
+      RetentionInDays: 30
+      Tags:
+        - Key: Project
+          Value: one-more-day
+        - Key: Environment
+          Value: prod
+        - Key: Owner
+          Value: tami
+        - Key: FeatureOwner
+          Value: nilu
+        - Key: ManagedBy
+          Value: sam
+
+  # ─────────────────────────────────────────
+  # CloudWatch — Dashboard
+  # ─────────────────────────────────────────
+  OneMoreDayDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: one-more-day-system-health
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Lambda Errors — All Functions",
+                "metrics": [
+                  ["AWS/Lambda", "Errors", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Errors", "FunctionName", "${AnalyticsFunction}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 0, "width": 12, "height": 6,
+              "properties": {
+                "title": "Lambda Duration — All Functions",
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${AnalyticsFunction}"]
+                ],
+                "period": 300,
+                "stat": "Maximum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "API Gateway 4xx / 5xx Errors",
+                "metrics": [
+                  ["AWS/ApiGateway", "4XXError", "ApiName", "one-more-day-api"],
+                  ["AWS/ApiGateway", "5XXError", "ApiName", "one-more-day-api"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 6, "width": 12, "height": 6,
+              "properties": {
+                "title": "Throttles — Lambda + DynamoDB",
+                "metrics": [
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${HabitsFunction}"],
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${CheckinFunction}"],
+                  ["AWS/Lambda", "Throttles", "FunctionName", "${AnalyticsFunction}"],
+                  ["AWS/DynamoDB", "ThrottledRequests", "TableName", "${HabitsTable}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 12, "width": 24, "height": 6,
+              "properties": {
+                "title": "DynamoDB Consumed Capacity",
+                "metrics": [
+                  ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "${HabitsTable}"],
+                  ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "${HabitsTable}"]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "us-east-1"
+              }
+            },
+            {
+              "type": "alarm",
+              "x": 0, "y": 18, "width": 24, "height": 6,
+              "properties": {
+                "title": "All Active Alarms",
+                "alarms": [
+                  "${HabitsLambdaErrorAlarm.Arn}",
+                  "${CheckinLambdaErrorAlarm.Arn}",
+                  "${AnalyticsLambdaErrorAlarm.Arn}",
+                  "${ApiGateway4xxAlarm.Arn}",
+                  "${ApiGateway5xxAlarm.Arn}",
+                  "${HabitsLambdaThrottleAlarm.Arn}",
+                  "${CheckinLambdaThrottleAlarm.Arn}",
+                  "${AnalyticsLambdaThrottleAlarm.Arn}",
+                  "${DynamoDBThrottleAlarm.Arn}"
+                ]
+              }
+            },
+                {
+                "type": "metric",
+                "x": 0, "y": 24, "width": 24, "height": 6,
+                "properties": {
+                  "title": "One More Day App Usage: habits, checkin, analytics",
+                  "metrics":[
+                    ["OneMoreDay/Usage", "HabitCreated"],
+                    ["OneMoreDay/Usage", "HabitViewed"],
+                    ["OneMoreDay/Usage", "HabitDeleted"],
+                    ["OneMoreDay/Usage", "CheckinCompleted"],
+                    ["OneMoreDay/Usage", "DashboardViewed"]
+                ],
+                  "period": 300,
+                  "stat": "Sum",
+                  "region": "us-east-1"
+                }
+                }
+          ]
+        }
+  # ─── Future Usage Metrics ───
+  # To add a new metric to the usage widget above
+  # Suggested additions:
+  # - RemindersSent — once Aksana's SES reminder Lambda is complete
+  # - ReportExported — once Nilu's S3 export feature is complete
+  # - ActiveUsers — track distinct users per session
+
+  DevTeamCloudWatchViewPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: one-more-day-dev-cloudwatch-view
+      Description: Read-only access to view the CloudWatch dashboard, alarms, and metrics
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListDashboards
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricWidgetImage
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:DescribeAlarmsForMetric
+              - cloudwatch:ListMetrics
+            Resource: "*"
+      Users:
+        - aksana-dev
+        - nilu-dev
+
+# ─────────────────────────────────────────
+# OUTPUTS — API Gateway URL and ID, UserPoolID, UserPoolClientId and Dashboard
+# Available after deploy via:
+# aws cloudformation describe-stacks --stack-name one-more-day --query "Stacks[0].Outputs"
+# ─────────────────────────────────────────
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${ApiGateway}.execute-api.us-east-1.amazonaws.com/prod"
+
+  ApiGatewayId:
+    Description: API Gateway ID
+    Value: !Ref ApiGateway
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+
+  DashboardURL:
+    Description: CloudWatch Dashboard URL
+    Value: !Sub "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=${OneMoreDayDashboard}"

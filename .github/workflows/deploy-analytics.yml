@@ -1,0 +1,50 @@
+name: Deploy Analytics Lambda
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "lambdas/analytics/**/*.py"
+      - "tests/test_analytics_integration.py"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r lambdas/analytics/requirements.txt
+
+      - name: Run tests
+        run: pytest lambdas/analytics/tests/
+
+      - name: Zip and deploy
+        run: |
+          cd lambdas/analytics
+          zip -r function.zip .
+          aws lambda update-function-code \
+            --function-name one-more-day-analytics \
+            --zip-file fileb://function.zip
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Run integration tests
+        run: |
+          pip install pytest requests boto3
+          pytest tests/test_analytics_integration.py -v -m integration
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+          SMOKE_TEST_EMAIL: ${{ secrets.SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.SMOKE_TEST_PASSWORD }}
