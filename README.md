@@ -4,7 +4,20 @@ A serverless habit tracker built on AWS that helps users build consistent habits
 
 Built by a team of four engineers as our Ada Developers Academy capstone, the project was intentionally designed to explore production-style cloud engineering practices including Infrastructure as Code, CI/CD, authentication, observability, automated testing, and event-driven architecture.
 
-**Live Application:** https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app
+## Live Application
+
+🌐 [One More Day — Live App](https://one-more-day-kke2zulaouzzarvjyhkrz6.streamlit.app)
+
+### Habit Tracker Demo
+
+https://github.com/user-attachments/assets/4e5134ad-10cf-4a20-9b44-175d7f3b6ea4
+
+
+### CloudWatch Dashboard
+
+https://github.com/user-attachments/assets/43eb1832-76dd-42c7-bdd7-9d9b3e6b9ff7
+
+
 
 ---
 
