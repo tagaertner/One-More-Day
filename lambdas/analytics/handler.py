@@ -7,6 +7,11 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from decimal import Decimal
 
+# ─────────────────────────────────────────
+# AUTH NOTE — Cognito is live
+#   user_id = event['requestContext']['authorizer']['claims']['sub']
+#   Do NOT read userId from the request body — it comes from the verified token.
+# ─────────────────────────────────────────
 
 dynamodb = boto3.resource(
     "dynamodb",
@@ -147,22 +152,71 @@ def get_stats(event):
     }
 
 
-def export_report_to_s3(user_id, stats):
-    """Write the weekly report as JSON to S3 and return a presigned GET URL."""
+def build_csv_report(user_id, stats):
+    """Build a CSV version of the weekly report — summary rows, then a per-habit table."""
+    import csv
+    import io
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    writer.writerow(["Weekly Report", user_id])
+    writer.writerow(["Generated At", datetime.now(timezone.utc).isoformat()])
+    writer.writerow([])
+
+    writer.writerow(["Metric", "Value"])
+    writer.writerow(["Total Habits", stats.get("totalHabits", 0)])
+    writer.writerow(["Total Completed This Week", stats.get("totalCompletedThisWeek", 0)])
+    writer.writerow(["Weekly Completion Rate", stats.get("weeklyCompletionRate", 0)])
+    writer.writerow(["Strongest Category", stats.get("strongestCategory") or "—"])
+    writer.writerow(["Best Day", stats.get("bestDay") or "—"])
+
+    needs_attention = stats.get("needsAttention")
+    writer.writerow([
+        "Needs Attention",
+        f"{needs_attention['habitName']} ({needs_attention['completionRate'] * 100:.1f}%)"
+        if needs_attention else "—"
+    ])
+    writer.writerow([])
+
+    writer.writerow(["Habit", "Category", "Current Streak", "Longest Streak", "Completions This Week"])
+    for h in stats.get("habits", []):
+        writer.writerow([
+            h.get("habitName"),
+            h.get("category"),
+            h.get("streakCount"),
+            h.get("longestStreak"),
+            h.get("completionsThisWeek"),
+        ])
+
+    return buffer.getvalue()
+
+
+def export_report_to_s3(user_id, stats, fmt="json"):
+    """Write the weekly report to S3 (JSON or CSV) and return a presigned GET URL."""
     import uuid
 
-    report = {
-        "userId": user_id,
-        "generatedAt": datetime.now(timezone.utc).isoformat(),
-        "report": stats,
-    }
-    key = f"reports/{user_id}/{uuid.uuid4()}.json"
+    file_id = str(uuid.uuid4())
+
+    if fmt == "csv":
+        body = build_csv_report(user_id, stats)
+        content_type = "text/csv"
+        key = f"reports/{user_id}/{file_id}.csv"
+    else:
+        report = {
+            "userId": user_id,
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "report": stats,
+        }
+        body = json.dumps(report, default=_decimal_default)
+        content_type = "application/json"
+        key = f"reports/{user_id}/{file_id}.json"
 
     s3_client.put_object(
         Bucket=REPORT_BUCKET,
         Key=key,
-        Body=json.dumps(report, default=_decimal_default),
-        ContentType="application/json",
+        Body=body,
+        ContentType=content_type,
     )
 
     url = s3_client.generate_presigned_url(
@@ -179,7 +233,12 @@ def get_report_export(event):
     checkins = get_checkins_in_window(user_id)
     stats = compute_weekly_stats(habits, checkins)
 
-    report_url = export_report_to_s3(user_id, stats)
+    params = event.get("queryStringParameters") or {}
+    fmt = params.get("format", "json").lower()
+    if fmt not in ("json", "csv"):
+        fmt = "json"
+
+    report_url = export_report_to_s3(user_id, stats, fmt=fmt)
 
     try:
         cloudwatch.put_metric_data(
