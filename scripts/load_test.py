@@ -54,9 +54,9 @@ def run_load():
 
     print("\nBad requests for 4xx alarms...")
     
-    for i in range(50):
-        requests.get(f"{BASE_URL}/habits", headers={"Authorization": "Bearer badtoken"})
-        print(f"Bad request {i+1}")
+    # for i in range(50):
+    #     requests.get(f"{BASE_URL}/habits", headers={"Authorization": "Bearer badtoken"})
+    #     print(f"Bad request {i+1}")
 
     print("\nCleaning up...")
     for habit_id in created_habits:

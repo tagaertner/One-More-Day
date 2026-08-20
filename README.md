@@ -166,9 +166,10 @@ allowing problems to be identified before users report them.
 The project includes multiple layers of testing.
 
 - Unit tests for Lambda functions
-- End-to-end tests using Playwright
-- Smoke tests after deployment
-- GitHub Actions validation before deployment
+- Integration tests hit the live API with real Cognito tokens
+- End to end browser tests using Playwright
+- Smoke tests after every deployment
+- GitHub Actions runs all tests before anything merges
 
 ---
 
