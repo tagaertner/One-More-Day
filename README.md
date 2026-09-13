@@ -2,7 +2,15 @@
 
 A serverless habit tracker built on AWS that helps users build consistent habits by tracking daily progress, maintaining streaks, and generating weekly insights.
 
-Built by a team of four engineers as our Ada Developers Academy capstone, the project was intentionally designed to explore production-style cloud engineering practices including Infrastructure as Code, CI/CD, authentication, observability, automated testing, and event-driven architecture.
+Built by a team of three engineers as our Ada Developers Academy capstone, the project was intentionally designed to explore production-style cloud engineering practices including Infrastructure as Code, CI/CD, authentication, observability, automated testing, and event-driven architecture.
+
+## Team Contributions
+
+**Aksana** — Habit Management (create, list, soft delete), including Lambda and DynamoDB implementation. Delivered the EventBridge + SES stretch goal (daily reminder emails).Co-owned Daily Check-In, building the frontend.
+
+**Nilu** — Progress Dashboard backend (Lambda, stats calculation, weekly report generation).Extended the report export beyond the original JSON-only spec to support both JSON and Excel output. Co-owned Daily Check-In, building the backend (streak logic, duplicate prevention, SNS notification).
+
+**Tami** — Infrastructure: Cognito authentication, CloudWatch custom metrics and dashboards, CI/CD via GitHub Actions, X-Ray tracing, DLQ. Also wrote integration tests and End-to=End tests.
 
 ## Live Application
 
@@ -12,12 +20,9 @@ Built by a team of four engineers as our Ada Developers Academy capstone, the pr
 
 https://github.com/user-attachments/assets/4e5134ad-10cf-4a20-9b44-175d7f3b6ea4
 
-
 ### CloudWatch Dashboard
 
 https://github.com/user-attachments/assets/43eb1832-76dd-42c7-bdd7-9d9b3e6b9ff7
-
-
 
 ---
 
@@ -248,7 +253,7 @@ one-more-day/
 │   ├── conftest.py                    # Shared test configuration and fixtures
 │   ├── test_analytics_integration.py
 │   ├── test_habits_integration.py
-│   └── test_checkin_integration.py    # Planned integration coverage
+│   └── test_checkin_integration.py
 │
 ├── scripts/
 │   ├── create_cognito_users.py
